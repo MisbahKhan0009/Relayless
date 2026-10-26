@@ -285,14 +285,16 @@ async fn source_change_and_sender_offline() {
     }
 
     // Sender comes back (same identity, new port).
+    // Slow the transfer so the source modification below always lands while
+    // most of the file is still outstanding (progress commits lag in-flight data).
+    set_limit(&receiver, 3 * 1024);
     let sender = Core::start(opts(&sdir, "Sender")).await.unwrap();
     receiver.add_peer_addr(sender.endpoint_addr());
     let _ = addr;
-    wait_progress(&receiver, &id, 40 * 1024 * 1024).await;
+    let resumed_from = receiver.list_jobs().unwrap().into_iter().find(|j| j.id == id).unwrap().verified_bytes;
+    wait_progress(&receiver, &id, resumed_from + 4 * 1024 * 1024).await;
 
     // Source is modified mid-transfer: the job must stop rather than mix versions.
-    // Slow the transfer first so the modification always lands before it finishes.
-    set_limit(&receiver, 2 * 1024);
     make_file(&shared.join("data.bin"), 80 * 1024 * 1024, 10);
     let j = wait_status(&receiver, &id, JobStatus::NeedsAttention, 60).await;
     println!("source change message: {:?}", j.error);
