@@ -168,12 +168,19 @@ jobs:
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
           echo "$BIN" >> "$GITHUB_PATH"
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
-          yes | "$BIN/sdkmanager" --licenses > /dev/null || true
-          NDK=$("$BIN/sdkmanager" --list 2>/dev/null | grep -oE "ndk;[0-9]+\.[0-9]+\.[0-9]+" | sort -u -t';' -k2 -V | tail -1)
-          echo "Installing platform-tools and $NDK"
-          yes | "$BIN/sdkmanager" "platform-tools" "$NDK" > /dev/null
-          echo "NDK_HOME=$SDK/ndk/${NDK#ndk;}" >> "$GITHUB_ENV"
-          echo "::notice title=Android toolchain::SDK $SDK, $NDK"
+          yes | "$BIN/sdkmanager" --licenses > /dev/null 2>&1 || true
+          NDK_DIR="${ANDROID_NDK_LATEST_HOME:-}"
+          if [ -z "$NDK_DIR" ] || [ ! -d "$NDK_DIR" ]; then
+            NDK_DIR=$(ls -d "$SDK"/ndk/*/ 2>/dev/null | sort -V | tail -1 || true)
+          fi
+          if [ -z "$NDK_DIR" ]; then
+            NDK=$("$BIN/sdkmanager" --list 2>/dev/null | grep -oE "ndk;[0-9]+\.[0-9]+\.[0-9]+" | sort -u -t';' -k2 -V | tail -1)
+            echo "Installing $NDK"
+            yes | "$BIN/sdkmanager" --install "$NDK" "platform-tools" | tail -5
+            NDK_DIR="$SDK/ndk/${NDK#ndk;}"
+          fi
+          echo "NDK_HOME=${NDK_DIR%/}" >> "$GITHUB_ENV"
+          echo "::notice title=Android toolchain::SDK $SDK, NDK ${NDK_DIR%/}"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
