@@ -72,6 +72,40 @@ jobs:
           "file=$dest" >> $env:GITHUB_OUTPUT
           Write-Host "Built $dest ($([math]::Round((Get-Item $dest).Length / 1MB, 1)) MB) sha256=$hash"
 
+      - name: Smoke test (install silently, launch, check engine starts)
+        shell: pwsh
+        run: |
+          $setup = "${{ steps.out.outputs.file }}"
+          $p = Start-Process -FilePath $setup -ArgumentList "/S" -PassThru -Wait
+          Write-Host "Installer exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { Write-Host "::error title=Smoke test::Installer exited with $($p.ExitCode)"; exit 1 }
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Relayless" -Recurse -Filter "Relayless.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter "Relayless.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 }
+          if (-not $exe) { Write-Host "::error title=Smoke test::Installed Relayless.exe not found"; exit 1 }
+          Write-Host "Installed at $($exe.FullName)"
+          $app = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 25
+          $log = Join-Path $env:APPDATA "app.relayless.desktop\logs\relayless.log"
+          $text = if (Test-Path $log) { Get-Content $log -Raw } else { "" }
+          Write-Host "---- app log ----"; Write-Host $text
+          $alive = -not $app.HasExited
+          $mem = if ($alive) { [math]::Round((Get-Process -Id $app.Id).WorkingSet64 / 1MB, 1) } else { 0 }
+          Write-Host "Process alive: $alive, working set: $mem MB"
+          # A second launch must hand over to the running instance and exit.
+          $second = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 6
+          $secondExited = $second.HasExited
+          Write-Host "Second instance exited (single-instance handoff): $secondExited"
+          Get-Process -Name "Relayless" -ErrorAction SilentlyContinue | Stop-Process -Force
+          $ok = $alive -and ($text -match "started as") -and $secondExited
+          $summary = "alive=$alive started=$($text -match 'started as') secondExited=$secondExited ws=${mem}MB"
+          if (-not $ok) {
+            $enc = ($text -replace '%','%25' -replace "`r",'' -replace "`n",'%0A')
+            Write-Host "::error title=Smoke test failed ($summary)::$enc"
+            exit 1
+          }
+          Write-Host "::notice title=Smoke test passed::$summary"
+
       - uses: actions/upload-artifact@v4
         with:
           name: Relayless-Windows-installer
