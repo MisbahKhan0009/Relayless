@@ -134,7 +134,7 @@ jobs:
 
   android:
     name: Android APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -152,12 +152,14 @@ jobs:
         shell: bash
         run: |
           set -e
+          trap 'echo "::error title=Android SDK setup failed at line $LINENO::$BASH_COMMAND"' ERR
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           if [ -z "$SDK" ] || ! ls "$SDK"/cmdline-tools/*/bin/sdkmanager > /dev/null 2>&1; then
             echo "No preinstalled Android SDK; downloading command-line tools"
             SDK="$HOME/android-sdk"
             mkdir -p "$SDK/cmdline-tools"
-            curl -sSLo /tmp/ct.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+            curl -fsSLo /tmp/ct.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip \
+              || { echo "::error title=Android SDK::Could not download Android command-line tools"; exit 1; }
             unzip -q /tmp/ct.zip -d "$SDK/cmdline-tools"
             mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
           fi
