@@ -116,21 +116,17 @@ jobs:
             ${{ steps.out.outputs.file }}.sha256
           if-no-files-found: error
 
-      - name: Attach installer to release
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+      - name: Publish GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          tag_name: v0.1.0-build${{ github.run_number }}
+          name: Relayless 0.1.0 (build ${{ github.run_number }})
+          body_path: RELEASE_NOTES.md
+          make_latest: true
           files: |
             ${{ steps.out.outputs.file }}
             ${{ steps.out.outputs.file }}.sha256
-          generate_release_notes: ${{ github.event_name != 'release' }}
-          append_body: true
-          body: |
-            ## Install
-            Download **${{ steps.out.outputs.file }}** below and run it. No administrator rights needed.
-
-            Windows SmartScreen may warn because the installer isn't code-signed yet: click **More info → Run anyway**.
 
   android:
     name: Android APK
@@ -193,28 +189,39 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Keep the same signing key across runs so new builds install over old ones.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.relayless-signing
+          key: relayless-signing-key-v1
+
       - name: Signing key
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          cd src-tauri/gen/android
+          K=~/.relayless-signing
+          mkdir -p "$K"
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > relayless.jks
-            PASS="$KEYSTORE_PASSWORD"
+            echo "$KEYSTORE_B64" | base64 -d > "$K/relayless.jks"
+            printf '%s' "$KEYSTORE_PASSWORD" > "$K/pass"
             echo "::notice title=APK signing::Signed with the repository's release key"
+          elif [ ! -f "$K/relayless.jks" ]; then
+            openssl rand -hex 16 | tr -d '\n' > "$K/pass"
+            keytool -genkeypair -keystore "$K/relayless.jks" -alias relayless -keyalg RSA -keysize 4096 \
+              -validity 10000 -storepass "$(cat "$K/pass")" -keypass "$(cat "$K/pass")" -dname "CN=Relayless" > /dev/null 2>&1
+            echo "::notice title=APK signing::Created a new signing key; later builds reuse it"
           else
-            PASS=$(openssl rand -hex 16)
-            keytool -genkeypair -keystore relayless.jks -alias relayless -keyalg RSA -keysize 4096 \
-              -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=Relayless" > /dev/null 2>&1
-            echo "::warning title=Temporary APK signing key::No ANDROID_KEYSTORE_BASE64 secret is set, so this APK is signed with a one-off key. Installing a later build over it will require uninstalling first. See README (Android signing)."
+            echo "::notice title=APK signing::Reusing the cached signing key"
           fi
-          printf 'storeFile=relayless.jks\nstorePassword=%s\nkeyAlias=relayless\nkeyPassword=%s\n' "$PASS" "$PASS" > keystore.properties
+          cp "$K/relayless.jks" src-tauri/gen/android/relayless.jks
+          PASS=$(cat "$K/pass")
+          printf 'storeFile=relayless.jks\nstorePassword=%s\nkeyAlias=relayless\nkeyPassword=%s\n' "$PASS" "$PASS" > src-tauri/gen/android/keystore.properties
 
       - name: Build APKs
         shell: bash
-        run: .github/scripts/run.sh npx tauri android build --apk --target aarch64 armv7 x86_64
+        run: .github/scripts/run.sh npx tauri android build --apk --target aarch64 armv7 x86_64 --config '{"bundle":{"android":{"versionCode":${{ github.run_number }}}}}'
 
       - name: Collect APK
         id: apk
@@ -225,7 +232,7 @@ jobs:
           find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -print
           f=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -1)
           [ -n "$f" ] || { echo "::error title=APK::No release APK found"; exit 1; }
-          name="Relayless-$ver-android.apk"
+          name="Relayless-$ver-build${{ github.run_number }}-android.apk"
           cp "$f" "out/$name"
           (cd out && sha256sum "$name" > "$name.sha256" && ls -la)
           echo "apk=out/$name" >> "$GITHUB_OUTPUT"
@@ -261,9 +268,12 @@ jobs:
           path: out/*
           if-no-files-found: error
 
-      - name: Attach APKs to release
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+      - name: Publish GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          tag_name: v0.1.0-build${{ github.run_number }}
+          name: Relayless 0.1.0 (build ${{ github.run_number }})
+          body_path: RELEASE_NOTES.md
           files: out/*
+          make_latest: true

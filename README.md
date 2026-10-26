@@ -7,13 +7,13 @@ Send very large files (tens or hundreds of GB) directly between Windows PCs and 
 
 ## Install
 
-Download `Relayless-Setup-<version>-x64.exe` from the [Releases](../../releases) page and run it. It installs per user, no administrator rights needed. The installer isn't code-signed yet, so SmartScreen may warn: choose **More info → Run anyway**.
+Download `Relayless-Setup-…-x64.exe` from the [latest release](../../releases/latest) and run it. It installs per user, no administrator rights needed. The installer isn't code-signed yet, so SmartScreen may warn: choose **More info → Run anyway**.
 
 ## Android
 
 Relayless also runs on Android 7.0 and later, and works across platforms: a phone can send to a Windows PC and the other way round.
 
-1. Download `Relayless-<version>-android.apk` (one universal file that runs on every Android phone and tablet) and open it. Allow installing from your browser or file manager if Android asks.
+1. Open the [latest release](../../releases/latest) on your phone and tap `Relayless-…-android.apk` (one universal file that runs on every Android phone and tablet) and open it. Allow installing from your browser or file manager if Android asks.
 2. On first use, allow **All files access** (to share real folders and save to `Download/Relayless`) and notifications.
 3. For long transfers, open **Settings → Android → Run in the background → Allow** so Android doesn't pause Relayless with the screen off. While files are moving, a "Receiving…/Sending…" notification keeps the transfer alive.
 
@@ -88,7 +88,7 @@ cargo test -p relayless-core --release  # engine tests: real transfers, pause/re
 
 CI (`.github/workflows/build.yml`) runs the engine tests on Linux and Windows, builds the installer, then installs and launches it on a clean Windows runner as a smoke test. Every run uploads the installer as a build artifact.
 
-To publish a release: on GitHub, **Releases → Draft a new release**, create a tag such as `v0.1.0`, and publish. CI builds the installer and attaches it to that release (pushing a `v*` tag does the same). Bump `version` in `src-tauri/tauri.conf.json` and `Cargo.toml` for each new release.
+Every push to `main` that passes CI publishes a GitHub Release (`v0.1.0-buildN`) with the Android APK and the Windows installer attached. Android builds reuse one signing key (cached by CI, or `ANDROID_KEYSTORE_BASE64` if set), so each new APK installs over the previous one.
 
 ## Layout
 
