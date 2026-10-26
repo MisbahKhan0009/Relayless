@@ -13,7 +13,7 @@ Download `Relayless-Setup-<version>-x64.exe` from the [Releases](../../releases)
 
 Relayless also runs on Android 7.0 and later, and works across platforms: a phone can send to a Windows PC and the other way round.
 
-1. Download `Relayless-<version>-android-arm64.apk` (almost every phone from the last decade; use `armv7` only for very old phones) and open it. Allow installing from your browser or file manager if Android asks.
+1. Download `Relayless-<version>-android.apk` (one universal file that runs on every Android phone and tablet) and open it. Allow installing from your browser or file manager if Android asks.
 2. On first use, allow **All files access** (to share real folders and save to `Download/Relayless`) and notifications.
 3. For long transfers, open **Settings → Android → Run in the background → Allow** so Android doesn't pause Relayless with the screen off. While files are moving, a "Receiving…/Sending…" notification keeps the transfer alive.
 
