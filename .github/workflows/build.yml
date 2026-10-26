@@ -234,6 +234,11 @@ jobs:
           done
           (cd out && sha256sum *.apk > SHA256SUMS.txt && ls -la)
           echo "x86=$(ls out/*x86_64.apk)" >> "$GITHUB_OUTPUT"
+          echo "arm64=$(ls out/*arm64.apk)" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect APKs (signature, SDK levels, ABIs)
+        shell: bash
+        run: bash .github/scripts/apk-inspect.sh
 
       - name: Enable KVM for the emulator
         run: |
@@ -255,6 +260,8 @@ jobs:
             adb shell monkey -p app.relayless -c android.intent.category.LAUNCHER 1
             sleep 45
             bash .github/scripts/android-smoke.sh
+            adb uninstall app.relayless
+            adb install -r ${{ steps.apk.outputs.arm64 }} && echo "::notice title=arm64 APK::Installs (via ARM translation on the emulator)" || echo "::warning title=arm64 APK::Install failed on the emulator, see log"
 
       - uses: actions/upload-artifact@v4
         with:
