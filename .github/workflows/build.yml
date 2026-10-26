@@ -6,6 +6,8 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -114,14 +116,16 @@ jobs:
             ${{ steps.out.outputs.file }}.sha256
           if-no-files-found: error
 
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Attach installer to release
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
           files: |
             ${{ steps.out.outputs.file }}
             ${{ steps.out.outputs.file }}.sha256
-          generate_release_notes: true
+          generate_release_notes: ${{ github.event_name != 'release' }}
+          append_body: true
           body: |
             ## Install
             Download **${{ steps.out.outputs.file }}** below and run it. No administrator rights needed.

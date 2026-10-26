@@ -62,7 +62,9 @@ npx tauri build --bundles nsis          # build the installer
 cargo test -p relayless-core --release  # engine tests: real transfers, pause/resume, crash recovery, corruption, source changes, path traversal
 ```
 
-CI (`.github/workflows/build.yml`) runs the engine tests on Linux and Windows and builds the installer on every push. Pushing a `v*` tag publishes a release with the installer.
+CI (`.github/workflows/build.yml`) runs the engine tests on Linux and Windows, builds the installer, then installs and launches it on a clean Windows runner as a smoke test. Every run uploads the installer as a build artifact.
+
+To publish a release: on GitHub, **Releases → Draft a new release**, create a tag such as `v0.1.0`, and publish. CI builds the installer and attaches it to that release (pushing a `v*` tag does the same). Bump `version` in `src-tauri/tauri.conf.json` and `Cargo.toml` for each new release.
 
 ## Layout
 
