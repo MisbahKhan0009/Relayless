@@ -5,6 +5,7 @@ import { useStore } from "../store";
 import { Button, Empty, RouteBadge, SectionHeader } from "../ui";
 import { JobRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
+import { StorageAccessNotice } from "../android";
 
 export default function Overview() {
   const { jobs, uploads, remotes, grants, activity, setPage, setConnectOpen, openBrowser } = useStore();
@@ -16,6 +17,7 @@ export default function Overview() {
 
   return (
     <div className="page">
+      <StorageAccessNotice />
       <div className="hero-actions">
         <button className="hero-tile" onClick={shareFolder}>
           <span className="ico"><FolderUp size={22} /></span>

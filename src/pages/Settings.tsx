@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { Copy, Info } from "lucide-react";
-import { errorText, type Settings as S } from "../api";
+import { BatteryCharging, Bell, Copy, FolderLock, Info } from "lucide-react";
+import { android, errorText, type Settings as S } from "../api";
+import { isAndroid, pickFolder } from "../platform";
+import { useStorageAccess } from "../android";
 import { mbit } from "../format";
 import { useStore } from "../store";
 import { Button, Segmented, Toggle } from "../ui";
@@ -45,7 +46,19 @@ export default function Settings() {
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [restartNote, setRestartNote] = useState(false);
 
+  const storage = useStorageAccess();
+  const [battery, setBattery] = useState<boolean | null>(null);
   useEffect(() => {
+    if (isAndroid()) {
+      const check = () => android.batteryStatus().then((b) => setBattery(b.unrestricted)).catch(() => {});
+      check();
+      window.addEventListener("focus", check);
+      document.addEventListener("visibilitychange", check);
+      return () => {
+        window.removeEventListener("focus", check);
+        document.removeEventListener("visibilitychange", check);
+      };
+    }
     isEnabled().then(setAutostart).catch(() => setAutostart(null));
   }, []);
 
@@ -64,7 +77,7 @@ export default function Settings() {
       <section>
         <div className="sub-title">General</div>
         <div className="panel settings-group">
-          <Row label="Computer name" hint="Shown to devices you share with or connect to.">
+          <Row label={isAndroid() ? "Device name" : "Computer name"} hint="Shown to devices you share with or connect to.">
             <input className="input" defaultValue={settings.deviceName} maxLength={64} onBlur={(e) => e.target.value.trim() && e.target.value !== settings.deviceName && save({ deviceName: e.target.value })} />
           </Row>
           <Row label="Default download folder">
@@ -72,14 +85,15 @@ export default function Settings() {
               <input className="input mono" value={settings.downloadDir} readOnly />
               <Button
                 onClick={async () => {
-                  const p = await open({ directory: true, defaultPath: settings.downloadDir, title: "Default download folder" });
-                  if (typeof p === "string") save({ downloadDir: p });
+                  const p = await pickFolder("Default download folder", settings.downloadDir);
+                  if (p) save({ downloadDir: p });
                 }}
               >
                 Change…
               </Button>
             </div>
           </Row>
+          {!isAndroid() && (<>
           <Toggle
             checked={!!autostart}
             disabled={autostart === null}
@@ -101,9 +115,35 @@ export default function Settings() {
             hint="Closing the window releases its memory; transfers continue. Quit from the tray icon."
             onChange={(v) => save({ closeToTray: v })}
           />
+          </>)}
           <Toggle checked={settings.notifications} label="Notifications" hint="When a transfer finishes, needs attention, or a device asks for access." onChange={(v) => save({ notifications: v })} />
         </div>
       </section>
+
+      {isAndroid() && (
+        <section>
+          <div className="sub-title">Android</div>
+          <div className="panel settings-group">
+            <Row label="All files access" hint="Needed to share folders and save downloads to real folders such as Download/Relayless.">
+              {storage.granted ? (
+                <span className="pill pill-ok"><FolderLock size={12} /> Allowed</span>
+              ) : (
+                <Button variant="primary" onClick={storage.request}>Allow</Button>
+              )}
+            </Row>
+            <Row label="Run in the background" hint="Lets transfers continue with the screen off without Android pausing them. A notification shows while files are moving.">
+              {battery ? (
+                <span className="pill pill-ok"><BatteryCharging size={12} /> Unrestricted</span>
+              ) : (
+                <Button onClick={() => android.requestIgnoreBatteryOptimizations().then((b) => setBattery(b.unrestricted)).catch(() => {})}>Allow</Button>
+              )}
+            </Row>
+            <Row label="Notification permission" hint="Shows transfer progress and access requests.">
+              <Button icon={<Bell size={14} />} onClick={() => android.requestNotificationPermission().catch(() => {})}>Request</Button>
+            </Row>
+          </div>
+        </section>
+      )}
 
       <section>
         <div className="sub-title">Speed and resources</div>
@@ -125,6 +165,7 @@ export default function Settings() {
           </Row>
           <Toggle
             checked={settings.lowPriority}
+            disabled={isAndroid()}
             label="Yield CPU to other apps"
             hint="Runs Relayless at below-normal priority. Network speed is unaffected; your other programs stay responsive."
             onChange={(v) => save({ lowPriority: v })}

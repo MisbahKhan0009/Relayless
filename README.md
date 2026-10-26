@@ -1,6 +1,6 @@
 # Relayless
 
-Send very large files (tens or hundreds of GB) directly from one Windows PC to another over the internet. No cloud upload, no size limit, and a transfer survives dropped connections, app restarts and reboots without starting over.
+Send very large files (tens or hundreds of GB) directly between Windows PCs and Android phones over the internet. No cloud upload, no size limit, and a transfer survives dropped connections, app restarts and reboots without starting over.
 
 > Your files stay on your devices. Your transfer survives interruptions.
 > (In the default direct-only mode, file data never passes through any server. If you enable relay fallback, encrypted data may pass through a public relay when routers block a direct path; the app always shows which route is in use.)
@@ -8,6 +8,30 @@ Send very large files (tens or hundreds of GB) directly from one Windows PC to a
 ## Install
 
 Download `Relayless-Setup-<version>-x64.exe` from the [Releases](../../releases) page and run it. It installs per user, no administrator rights needed. The installer isn't code-signed yet, so SmartScreen may warn: choose **More info → Run anyway**.
+
+## Android
+
+Relayless also runs on Android 7.0 and later, and works across platforms: a phone can send to a Windows PC and the other way round.
+
+1. Download `Relayless-<version>-android-arm64.apk` (almost every phone from the last decade; use `armv7` only for very old phones) and open it. Allow installing from your browser or file manager if Android asks.
+2. On first use, allow **All files access** (to share real folders and save to `Download/Relayless`) and notifications.
+3. For long transfers, open **Settings → Android → Run in the background → Allow** so Android doesn't pause Relayless with the screen off. While files are moving, a "Receiving…/Sending…" notification keeps the transfer alive.
+
+### Android signing
+
+Android only installs an update over an existing app if both APKs are signed with the same key. CI signs with your key when these repository secrets exist:
+
+- `ANDROID_KEYSTORE_BASE64`: a keystore with a key alias `relayless`, base64-encoded
+- `ANDROID_KEYSTORE_PASSWORD`: its password (used for both the store and the key)
+
+Create one once and keep a backup (losing it means users must uninstall to update):
+
+```sh
+keytool -genkeypair -keystore relayless.jks -alias relayless -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Relayless"
+base64 -w0 relayless.jks   # paste the output into ANDROID_KEYSTORE_BASE64
+```
+
+Without the secrets, each build is signed with a one-off key (fine for testing; updating then requires uninstalling first).
 
 ## Use it
 
@@ -70,7 +94,8 @@ To publish a release: on GitHub, **Releases → Draft a new release**, create a 
 
 ```
 crates/core   Rust engine: protocol, sharing and permissions, invitations, resumable download engine, SQLite state
-src-tauri     Desktop shell: commands, events, tray, notifications
+src-tauri     App shell: commands, events, tray (Windows), background service (Android)
+plugins/relayless-android  Kotlin integration: storage access, foreground service, battery exemption
 src           React + TypeScript UI
 ```
 

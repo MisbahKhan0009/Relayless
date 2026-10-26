@@ -1,0 +1,11 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Relayless is dark-only for now; match the UI so there is no white flash. -->
+    <style name="Theme.relayless" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowBackground">@color/rl_background</item>
+        <item name="android:statusBarColor">@color/rl_background</item>
+        <item name="android:navigationBarColor">@color/rl_surface</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
+        <item name="colorPrimary">@color/rl_accent</item>
+    </style>
+</resources>

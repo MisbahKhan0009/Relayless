@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="rl_background">#FF0C0D0F</color>
+    <color name="rl_surface">#FF121417</color>
+    <color name="rl_accent">#FF2DD4BF</color>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "identifier": "app.relayless",
+  "app": {
+    "windows": [{ "label": "main", "url": "index.html" }]
+  }
+}

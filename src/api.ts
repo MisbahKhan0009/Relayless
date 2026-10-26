@@ -167,6 +167,7 @@ export interface Settings {
 }
 
 export interface Bootstrap {
+  platform: string;
   settings: Settings;
   network: NetworkStatus;
   version: string;
@@ -177,6 +178,13 @@ export interface JoinResult {
   peerId: string;
   senderName: string;
   shares: { id: string; name: string }[];
+}
+
+export interface LocalDir {
+  path: string;
+  parent: string | null;
+  dirs: string[];
+  root: string;
 }
 
 export interface DownloadItem {
@@ -215,6 +223,18 @@ export const api = {
   removeJob: (id: string) => invoke<void>("remove_job", { id }),
   listActivity: (limit: number) => invoke<Activity[]>("list_activity", { limit }),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  listLocalDir: (path: string | null) => invoke<LocalDir>("list_local_dir", { path }),
+  makeDir: (parent: string, name: string) => invoke<string>("make_dir", { parent, name }),
+};
+
+/** Android integration (no-ops on desktop). */
+export const android = {
+  hasAllFilesAccess: () => invoke<{ granted: boolean }>("plugin:relayless-android|has_all_files_access"),
+  requestAllFilesAccess: () => invoke<{ granted: boolean }>("plugin:relayless-android|request_all_files_access"),
+  requestNotificationPermission: () => invoke<{ granted: boolean }>("plugin:relayless-android|request_notification_permission"),
+  batteryStatus: () => invoke<{ unrestricted: boolean }>("plugin:relayless-android|battery_status"),
+  requestIgnoreBatteryOptimizations: () => invoke<{ unrestricted: boolean }>("plugin:relayless-android|request_ignore_battery_optimizations"),
+  openFile: (path: string) => invoke<void>("plugin:relayless-android|open_file", { path }),
 };
 
 export function on<T>(event: string, cb: (payload: T) => void): Promise<UnlistenFn> {

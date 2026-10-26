@@ -131,3 +131,116 @@ jobs:
             Download **${{ steps.out.outputs.file }}** below and run it. No administrator rights needed.
 
             Windows SmartScreen may warn because the installer isn't code-signed yet: click **More info → Run anyway**.
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          NDK=$(sdkmanager --list 2>/dev/null | grep -oE "ndk;[0-9]+\.[0-9]+\.[0-9]+" | sort -u -t';' -k2 -V | tail -1)
+          echo "Installing $NDK"
+          yes | sdkmanager "$NDK" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK#ndk;}" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: android
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          cd src-tauri/gen/android
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > relayless.jks
+            PASS="$KEYSTORE_PASSWORD"
+            echo "::notice title=APK signing::Signed with the repository's release key"
+          else
+            PASS=$(openssl rand -hex 16)
+            keytool -genkeypair -keystore relayless.jks -alias relayless -keyalg RSA -keysize 4096 \
+              -validity 10000 -storepass "$PASS" -keypass "$PASS" -dname "CN=Relayless" > /dev/null 2>&1
+            echo "::warning title=Temporary APK signing key::No ANDROID_KEYSTORE_BASE64 secret is set, so this APK is signed with a one-off key. Installing a later build over it will require uninstalling first. See README (Android signing)."
+          fi
+          printf 'storeFile=relayless.jks\nstorePassword=%s\nkeyAlias=relayless\nkeyPassword=%s\n' "$PASS" "$PASS" > keystore.properties
+
+      - name: Build APKs
+        shell: bash
+        run: .github/scripts/run.sh npx tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
+
+      - name: Collect APKs
+        id: apk
+        shell: bash
+        run: |
+          ver=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          mkdir -p out
+          find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -print
+          for f in $(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk"); do
+            case "$f" in
+              *arm64*) abi=arm64 ;;
+              *armeabi*|*arm-*|*/arm/*) abi=armv7 ;;
+              *x86_64*) abi=x86_64 ;;
+              *) abi=universal ;;
+            esac
+            cp "$f" "out/Relayless-$ver-android-$abi.apk"
+          done
+          (cd out && sha256sum *.apk > SHA256SUMS.txt && ls -la)
+          echo "x86=$(ls out/*x86_64.apk)" >> "$GITHUB_OUTPUT"
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Smoke test on Android emulator (install, launch, engine starts)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb install -r ${{ steps.apk.outputs.x86 }}
+            adb logcat -c
+            adb shell monkey -p app.relayless -c android.intent.category.LAUNCHER 1
+            sleep 45
+            bash .github/scripts/android-smoke.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Relayless-Android-APKs
+          path: out/*
+          if-no-files-found: error
+
+      - name: Attach APKs to release
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          files: out/*

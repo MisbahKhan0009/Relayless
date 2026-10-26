@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { AccessRequests, ConnectDialog, Onboarding } from "./dialogs";
+import { FolderPickerHost } from "./android";
 import { isActive, speed } from "./format";
 import { useStore, type Page } from "./store";
 import { Button } from "./ui";
@@ -53,15 +54,15 @@ export default function App() {
   const attention = jobs.filter((j) => j.status === "needs_attention").length;
   const down = jobs.filter((j) => j.status === "downloading").reduce((a, j) => a + j.speedBps, 0);
 
-  const nav: { id: Page; label: string; icon: React.ReactNode; count?: number; hot?: boolean; alert?: boolean }[] = [
-    { id: "overview", label: "Overview", icon: <LayoutGrid size={17} /> },
-    { id: "shares", label: "Shared folders", icon: <FolderUp size={17} />, count: s.shares.length || undefined },
-    { id: "devices", label: "Remote devices", icon: <Monitor size={17} />, count: s.remotes.length || undefined },
-    { id: "transfers", label: "Transfers", icon: <ArrowDownUp size={17} />, count: attention || activeCount || undefined, hot: activeCount > 0, alert: attention > 0 },
-    { id: "activity", label: "Activity", icon: <ListChecks size={17} /> },
-    { id: "settings", label: "Settings", icon: <SettingsIcon size={17} /> },
+  const nav: { id: Page; label: string; short: string; icon: React.ReactNode; count?: number; hot?: boolean; alert?: boolean }[] = [
+    { id: "overview", label: "Overview", short: "Home", icon: <LayoutGrid size={17} /> },
+    { id: "shares", label: "Shared folders", short: "Shared", icon: <FolderUp size={17} />, count: s.shares.length || undefined },
+    { id: "devices", label: "Remote devices", short: "Devices", icon: <Monitor size={17} />, count: s.remotes.length || undefined },
+    { id: "transfers", label: "Transfers", short: "Transfers", icon: <ArrowDownUp size={17} />, count: attention || activeCount || undefined, hot: activeCount > 0, alert: attention > 0 },
+    { id: "activity", label: "Activity", short: "Activity", icon: <ListChecks size={17} /> },
+    { id: "settings", label: "Settings", short: "Settings", icon: <SettingsIcon size={17} /> },
   ];
-  if (s.browse) nav.splice(3, 0, { id: "browse", label: s.browse.shareName, icon: <FolderOpen size={17} /> });
+  if (s.browse) nav.splice(3, 0, { id: "browse", label: s.browse.shareName, short: "Browse", icon: <FolderOpen size={17} /> });
 
   const page = (() => {
     switch (s.page) {
@@ -91,9 +92,10 @@ export default function App() {
         </div>
         <nav className="nav" aria-label="Main">
           {nav.map((n) => (
-            <button key={n.id} className={`nav-item ${s.page === n.id ? "active" : ""}`} onClick={() => s.setPage(n.id)} aria-current={s.page === n.id ? "page" : undefined}>
+            <button key={n.id} className={`nav-item nav-${n.id} ${s.page === n.id ? "active" : ""}`} onClick={() => s.setPage(n.id)} aria-current={s.page === n.id ? "page" : undefined}>
               {n.icon}
-              <span className="truncate">{n.label}</span>
+              <span className="truncate nav-long">{n.label}</span>
+              <span className="nav-short">{n.short}</span>
               {n.count != null && <span className={`nav-count ${n.alert ? "alert" : n.hot ? "hot" : ""}`} title={n.alert ? "Needs attention" : undefined}>{n.count}</span>}
             </button>
           ))}
@@ -128,6 +130,7 @@ export default function App() {
 
       {s.connectOpen && <ConnectDialog onClose={() => s.setConnectOpen(false)} />}
       <AccessRequests />
+      <FolderPickerHost />
       {s.ready && <Onboarding />}
 
       <div className="toasts" aria-live="polite">

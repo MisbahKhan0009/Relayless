@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 
 /** Share created via the folder picker that should open its invite dialog next. */
 let pendingInvite: string | null = null;
-import { open } from "@tauri-apps/plugin-dialog";
+import { pickFolder } from "../platform";
 import { Ban, FolderOpen, FolderUp, Link2, Monitor, Pause, Play, Trash2, UserX } from "lucide-react";
 import { api, errorText, type Share } from "../api";
 import { InviteDialog } from "../dialogs";
+import { StorageAccessNotice } from "../android";
 import { ago, speed, until } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, IconButton, Modal, Pill, RouteBadge } from "../ui";
@@ -15,8 +16,8 @@ export function useShareFolder() {
   const { toast, setPage, refreshShares } = useStore();
   return useCallback(async () => {
     try {
-      const picked = await open({ directory: true, multiple: false, title: "Choose a folder to share" });
-      if (!picked || Array.isArray(picked)) return;
+      const picked = await pickFolder("Choose a folder to share");
+      if (!picked) return;
       const share = await api.createShare(picked);
       refreshShares();
       setPage("shares");
@@ -152,7 +153,8 @@ export default function Shares() {
 
   return (
     <div className="page">
-      <div className="hstack">
+      <StorageAccessNotice />
+      <div className="hstack wrap">
         <span className="muted grow">
           People you invite can browse and download from these folders only. They can't see anything else on your computer or change your files.
         </span>

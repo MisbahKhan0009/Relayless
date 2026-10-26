@@ -11,6 +11,7 @@ const data: Record<string, any> = {
   bootstrap: {
     settings: { deviceName: "Jonas-Workstation", downloadDir: "C:\\Users\\Jonas\\Downloads\\Relayless", parallelStreams: 12, maxConcurrentJobs: 2, downloadLimitKbps: 0, uploadLimitKbps: 0, connectionMode: "direct_only", congestion: "bbr", chunkSizeMib: 16, lowPriority: true, notifications: true, closeToTray: true, onboarded: (window as any).__onboarded ?? true },
     network: { endpointId: "9f3c1e7a2b4d6f8091a3c5e7f9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7", endpointShort: "9f3c1e7a", online: true, relayUrl: "https://euc1-1.relay.n0.iroh-canary.iroh.link./", directAddrs: 3 },
+    platform: (window as any).__platform ?? "windows",
     version: "0.1.0", dataDir: "C:\\Users\\Jonas\\AppData\\Roaming\\app.relayless.desktop",
   },
   list_shares: [
@@ -57,6 +58,9 @@ const data: Record<string, any> = {
     qrSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"><rect width="29" height="29" fill="#fff"/><path d="M1 1h7v7H1zM21 1h7v7h-7zM1 21h7v7H1z" fill="#0e0f11"/><path d="M10 2h1v1h-1zM12 4h2v2h-2zM10 10h9v9h-9zM22 12h3v3h-3zM12 22h4v1h-4zM20 20h6v6h-6z" fill="#0e0f11"/></svg>',
   },
 };
+data["plugin:relayless-android|has_all_files_access"] = { granted: false };
+data["plugin:relayless-android|battery_status"] = { unrestricted: false };
+data["list_local_dir"] = { path: "/storage/emulated/0", parent: null, root: "/storage/emulated/0", dirs: ["Alarms", "DCIM", "Documents", "Download", "Movies", "Music", "Pictures"] };
 export async function invoke<T>(cmd: string, _args?: any): Promise<T> {
   await new Promise((r) => setTimeout(r, 30));
   if (cmd in data) return JSON.parse(JSON.stringify(data[cmd]));

@@ -13,6 +13,7 @@ import {
   type Share,
   type Upload,
 } from "./api";
+import { setPlatform } from "./platform";
 
 export type Page = "overview" | "shares" | "devices" | "browse" | "transfers" | "activity" | "settings";
 
@@ -143,6 +144,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const b = await api.bootstrap();
+        setPlatform(b.platform);
         setVersion(b.version);
         setDataDir(b.dataDir);
         setSettings(b.settings);

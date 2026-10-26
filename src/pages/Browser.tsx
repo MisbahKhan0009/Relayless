@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { pickFolder } from "../platform";
+import { StorageAccessNotice } from "../android";
 import {
   ArrowDown,
   ArrowLeft,
@@ -287,6 +288,7 @@ export default function Browser() {
             </>
           }
         >
+          <StorageAccessNotice compact />
           <span>
             {sel.length === 1 ? <b>{sel[0].name}</b> : <b>{sel.length} items</b>}
             {selFiles.length > 0 && <span className="muted"> ({bytes(selBytes)}{sel.length > selFiles.length ? " plus folder contents" : ""})</span>}
@@ -297,8 +299,8 @@ export default function Browser() {
               <input className="input mono" value={dest} onChange={(e) => setDest(e.target.value)} />
               <Button
                 onClick={async () => {
-                  const p = await open({ directory: true, defaultPath: dest || undefined, title: "Choose where to save" });
-                  if (typeof p === "string") setDest(p);
+                  const p = await pickFolder("Choose where to save", dest || undefined);
+                  if (p) setDest(p);
                 }}
               >
                 Change…

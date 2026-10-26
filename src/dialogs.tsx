@@ -13,7 +13,8 @@ import {
   Wifi,
   Zap,
 } from "lucide-react";
-import { api, errorText, on, type CreatedInvitation, type JoinResult, type Share } from "./api";
+import { android, api, errorText, on, type CreatedInvitation, type JoinResult, type Share } from "./api";
+import { isAndroid } from "./platform";
 import { until } from "./format";
 import { useStore } from "./store";
 import { Button, Modal, Segmented, Toggle } from "./ui";
@@ -68,7 +69,7 @@ export function InviteDialog({ share, onClose }: { share: Share; onClose: () => 
   if (created) {
     return (
       <Modal title={`Invite to “${share.name}”`} onClose={onClose} width={620} footer={<Button variant="primary" onClick={onClose}>Done</Button>}>
-        <div className="hstack" style={{ alignItems: "flex-start", gap: 18 }}>
+        <div className="hstack invite-layout" style={{ alignItems: "flex-start", gap: 18 }}>
           <div className="qr" dangerouslySetInnerHTML={{ __html: created.qrSvg }} aria-label="Invitation QR code" />
           <div className="stack grow" style={{ gap: 14 }}>
             {created.shortCode && (
@@ -320,13 +321,18 @@ export function Onboarding() {
   const { settings, saveSettings } = useStore();
   const [name, setName] = useState(settings?.deviceName ?? "");
   if (!settings || settings.onboarded) return null;
-  const done = () => saveSettings({ ...settings, deviceName: name.trim() || settings.deviceName, onboarded: true });
+  const done = () => {
+    if (isAndroid()) {
+      android.requestNotificationPermission().catch(() => {});
+    }
+    return saveSettings({ ...settings, deviceName: name.trim() || settings.deviceName, onboarded: true });
+  };
   return (
     <Modal title="Welcome to Relayless" onClose={done} width={560} footer={<Button variant="primary" onClick={done}>Get started</Button>}>
       <div className="onboard-points">
         <div className="onboard-point">
           <span className="i"><Zap size={16} /></span>
-          <span><b>Direct, computer to computer</b><span className="muted">Files go straight from the sender's PC to yours, end-to-end encrypted. Nothing is uploaded to a cloud.</span></span>
+          <span><b>Direct, device to device</b><span className="muted">Files go straight from the sender's device to yours, end-to-end encrypted. Nothing is uploaded to a cloud.</span></span>
         </div>
         <div className="onboard-point">
           <span className="i"><Waypoints size={16} /></span>
@@ -334,11 +340,11 @@ export function Onboarding() {
         </div>
         <div className="onboard-point">
           <span className="i"><RefreshCw size={16} /></span>
-          <span><b>Interruptions don't lose progress</b><span className="muted">Both PCs need to be online while a transfer runs. If either drops, restarts or reboots, the download continues from its last verified piece.</span></span>
+          <span><b>Interruptions don't lose progress</b><span className="muted">Both devices need to be online while a transfer runs. If either drops, restarts or reboots, the download continues from its last verified piece.{isAndroid() ? " On Android a notification shows while files are moving so the transfer keeps running with the screen off." : ""}</span></span>
         </div>
       </div>
       <div className="field">
-        <label htmlFor="dn">This computer's name</label>
+        <label htmlFor="dn">{isAndroid() ? "This device's name" : "This computer's name"}</label>
         <input id="dn" className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} />
         <span className="hint">Shown to people you share with or connect to.</span>
       </div>

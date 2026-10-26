@@ -1,0 +1,11 @@
+[default]
+description = "Everything the Relayless UI needs from the Android integration"
+permissions = [
+  "allow-has-all-files-access",
+  "allow-request-all-files-access",
+  "allow-device-info",
+  "allow-request-notification-permission",
+  "allow-battery-status",
+  "allow-request-ignore-battery-optimizations",
+  "allow-open-file",
+]

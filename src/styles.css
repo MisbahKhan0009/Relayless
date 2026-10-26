@@ -1330,3 +1330,233 @@ input[type="range"] {
   display: block;
   margin-bottom: 2px;
 }
+
+/* ------------------------------------------------------------------ phones */
+
+.nav-short {
+  display: none;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 760px) {
+  body {
+    overscroll-behavior: none;
+  }
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    flex-direction: row;
+    padding: 4px 4px 6px;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .brand,
+  .sidebar-foot,
+  .nav-activity {
+    display: none;
+  }
+  .nav {
+    flex-direction: row;
+    width: 100%;
+    gap: 0;
+  }
+  .nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    height: 54px;
+    gap: 3px;
+    padding: 0 2px;
+    font-size: 10.5px;
+    font-weight: 600;
+    position: relative;
+    text-align: center;
+  }
+  .nav-item.active {
+    background: transparent;
+  }
+  .nav-long {
+    display: none;
+  }
+  .nav-short {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nav-count {
+    position: absolute;
+    top: 3px;
+    left: calc(50% + 6px);
+    margin: 0;
+    font-size: 10px;
+  }
+  .nav-count:not(.hot):not(.alert) {
+    display: none;
+  }
+  .main {
+    padding-bottom: 66px;
+  }
+  .topbar {
+    height: 52px;
+    padding: 0 14px;
+    gap: 8px;
+  }
+  .topbar h1 {
+    font-size: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar .pill,
+  .topbar .faint {
+    display: none;
+  }
+  .content {
+    padding: 14px 14px 24px;
+  }
+  .page {
+    gap: 20px;
+  }
+  .hero-actions,
+  .two-col {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .hero-tile {
+    padding: 14px;
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .stat .v {
+    font-size: 18px;
+  }
+  .setting {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .settings-group {
+    padding: 2px 14px;
+  }
+  .share-card {
+    padding: 14px;
+  }
+  .share-head {
+    flex-wrap: wrap;
+  }
+  .share-head > .stack {
+    flex-basis: calc(100% - 60px);
+  }
+  .thead,
+  .trow {
+    grid-template-columns: 34px minmax(0, 1fr) 76px 36px;
+    padding: 0 4px;
+    gap: 6px;
+  }
+  .thead > :nth-child(4),
+  .trow > :nth-child(4) {
+    display: none;
+  }
+  .tbody {
+    height: calc(100vh - 300px);
+  }
+  .toolbar .search {
+    width: auto;
+    flex: 1 1 100%;
+    order: 3;
+  }
+  .crumb {
+    max-width: 140px;
+  }
+  .job {
+    grid-template-columns: 30px minmax(0, 1fr) 74px;
+    gap: 4px 10px;
+    padding: 12px;
+  }
+  .job-ico {
+    width: 30px;
+    height: 30px;
+  }
+  .job-details {
+    grid-column: 1 / 4;
+  }
+  .kv {
+    grid-template-columns: 96px 1fr;
+  }
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+  .modal-backdrop {
+    padding: 10px;
+    place-items: end center;
+  }
+  .modal {
+    max-height: calc(100vh - 20px);
+  }
+  .modal-foot {
+    flex-wrap: wrap;
+  }
+  .invite-layout {
+    flex-direction: column;
+    align-items: center !important;
+  }
+  .short-code {
+    font-size: 22px;
+  }
+  .toasts {
+    left: 12px;
+    right: 12px;
+    bottom: 76px;
+  }
+  .selection-bar {
+    bottom: 4px;
+  }
+  .hstack.wrap > .muted.grow {
+    flex-basis: 100%;
+  }
+}
+
+/* ------------------------------------------------------------------ folder picker */
+
+.picker-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 50vh;
+  overflow: auto;
+}
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+.picker-item + .picker-item {
+  border-top: 1px solid var(--border);
+}
+.picker-item:hover {
+  background: var(--hover);
+}
+.picker-item .dir {
+  color: var(--accent);
+}

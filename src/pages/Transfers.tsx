@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  ExternalLink,
   FolderOpen,
   Pause,
   Play,
@@ -10,7 +11,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { api, errorText, type Job } from "../api";
+import { android, api, errorText, type Job } from "../api";
+import { isAndroid } from "../platform";
 import { bytes, dateTime, duration, isActive, mbit, speed, statusTone } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, IconButton, Modal, Progress, RouteBadge, StatusIcon, StatusPill } from "../ui";
@@ -94,8 +96,11 @@ export function JobRow({ job, compact = false }: { job: Job; compact?: boolean }
           </IconButton>
         )}
         {job.status === "completed" && (
-          <IconButton label="Show in folder" onClick={() => run(() => api.revealPath(job.destPath))}>
-            <FolderOpen size={16} />
+          <IconButton
+            label={isAndroid() ? "Open" : "Show in folder"}
+            onClick={() => run(() => (isAndroid() ? android.openFile(job.destPath) : api.revealPath(job.destPath)))}
+          >
+            {isAndroid() ? <ExternalLink size={16} /> : <FolderOpen size={16} />}
           </IconButton>
         )}
         {job.status !== "completed" && job.status !== "canceled" && (
