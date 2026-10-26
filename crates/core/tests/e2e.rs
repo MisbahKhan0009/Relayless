@@ -295,6 +295,29 @@ async fn source_change_and_sender_offline() {
     wait_progress(&receiver, &id, resumed_from + 4 * 1024 * 1024).await;
 
     // Source is modified mid-transfer: the job must stop rather than mix versions.
+    #[cfg(windows)]
+    {
+        // While pieces are being read, the sender denies other writers, so an
+        // edit is refused outright by Windows ("file in use").
+        let start = Instant::now();
+        let mut blocked = false;
+        while start.elapsed() < Duration::from_secs(5) {
+            match std::fs::OpenOptions::new().write(true).open(shared.join("data.bin")) {
+                Err(e) if e.raw_os_error() == Some(32) => {
+                    blocked = true;
+                    break;
+                }
+                _ => tokio::time::sleep(Duration::from_millis(20)).await,
+            }
+        }
+        assert!(blocked, "sender should lock the source against writers while reading");
+        // Edit it while the transfer is paused; resuming must detect the change.
+        receiver.pause_job(&id).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        make_file(&shared.join("data.bin"), 80 * 1024 * 1024, 10);
+        receiver.resume_job(&id).await.unwrap();
+    }
+    #[cfg(not(windows))]
     make_file(&shared.join("data.bin"), 80 * 1024 * 1024, 10);
     let j = wait_status(&receiver, &id, JobStatus::NeedsAttention, 60).await;
     println!("source change message: {:?}", j.error);
