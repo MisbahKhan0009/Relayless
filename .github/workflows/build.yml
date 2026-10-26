@@ -143,20 +143,35 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK
+      - name: Android SDK and NDK
         shell: bash
         run: |
-          NDK=$(sdkmanager --list 2>/dev/null | grep -oE "ndk;[0-9]+\.[0-9]+\.[0-9]+" | sort -u -t';' -k2 -V | tail -1)
-          echo "Installing $NDK"
-          yes | sdkmanager "$NDK" > /dev/null
-          echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK#ndk;}" >> "$GITHUB_ENV"
+          set -e
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK" ] || ! ls "$SDK"/cmdline-tools/*/bin/sdkmanager > /dev/null 2>&1; then
+            echo "No preinstalled Android SDK; downloading command-line tools"
+            SDK="$HOME/android-sdk"
+            mkdir -p "$SDK/cmdline-tools"
+            curl -sSLo /tmp/ct.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+            unzip -q /tmp/ct.zip -d "$SDK/cmdline-tools"
+            mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          fi
+          BIN=$(ls -d "$SDK"/cmdline-tools/*/bin | sort -V | tail -1)
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$BIN" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          yes | "$BIN/sdkmanager" --licenses > /dev/null || true
+          NDK=$("$BIN/sdkmanager" --list 2>/dev/null | grep -oE "ndk;[0-9]+\.[0-9]+\.[0-9]+" | sort -u -t';' -k2 -V | tail -1)
+          echo "Installing platform-tools and $NDK"
+          yes | "$BIN/sdkmanager" "platform-tools" "$NDK" > /dev/null
+          echo "NDK_HOME=$SDK/ndk/${NDK#ndk;}" >> "$GITHUB_ENV"
+          echo "::notice title=Android toolchain::SDK $SDK, $NDK"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
