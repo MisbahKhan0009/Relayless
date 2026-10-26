@@ -22,21 +22,22 @@ jobs:
     name: Core tests (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: core-linux
       - name: Unit and end-to-end transfer tests
-        run: cargo test -p relayless-core --release
+        shell: bash
+        run: .github/scripts/run.sh cargo test -p relayless-core --release -- --test-threads=1
 
   windows:
     name: Windows installer
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -51,10 +52,12 @@ jobs:
         run: npm ci
 
       - name: Core tests on Windows (file I/O, locking, transfers)
-        run: cargo test -p relayless-core --release
+        shell: bash
+        run: .github/scripts/run.sh cargo test -p relayless-core --release -- --test-threads=1
 
       - name: Build installer
-        run: npx tauri build --bundles nsis
+        shell: bash
+        run: .github/scripts/run.sh npx tauri build --bundles nsis
 
       - name: Collect installer
         id: out
