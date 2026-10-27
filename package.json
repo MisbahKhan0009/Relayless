@@ -2,14 +2,23 @@
   "name": "relayless",
   "private": true,
   "version": "0.1.0",
+  "description": "Send huge files directly between Windows and Android: end-to-end encrypted, resumable, no cloud upload.",
+  "license": "MIT",
+  "homepage": "https://misbahkhan0009.github.io/Relayless/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MisbahKhan0009/Relayless.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev:ui": "vite --mode mock"
   },
   "dependencies": {
+    "@fontsource-variable/figtree": "^5.3.0",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-autostart": "^2.7.0",
     "@tauri-apps/plugin-dialog": "^2.8.3",

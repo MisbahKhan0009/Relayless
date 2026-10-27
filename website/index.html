@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Relayless: send huge files directly between your devices</title>
+    <meta
+      name="description"
+      content="Free, open-source app that sends files of any size directly between Windows PCs and Android phones. End-to-end encrypted, no cloud upload, and transfers resume from the last verified megabyte."
+    />
+    <meta name="theme-color" content="#121212" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+    <link rel="apple-touch-icon" href="assets/icon-256.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Relayless: send huge files directly between your devices" />
+    <meta property="og:description" content="Direct, encrypted, resumable transfers between Windows and Android. No cloud upload, no size limit. Free and open source." />
+    <meta property="og:image" content="https://misbahkhan0009.github.io/Relayless/assets/og.png" />
+    <meta property="og:url" content="https://misbahkhan0009.github.io/Relayless/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <script src="main.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="#top" aria-label="Relayless home">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+            <rect width="24" height="24" rx="6" fill="#000" />
+            <circle cx="7" cy="12" r="3.2" fill="#1ED760" />
+            <rect x="7" y="10.8" width="10" height="2.4" rx="1.2" fill="#1ED760" />
+            <circle cx="17" cy="12" r="3.2" fill="#1ED760" />
+            <circle cx="17" cy="12" r="1.5" fill="#000" />
+          </svg>
+          Relayless
+        </a>
+        <nav class="nav-links" aria-label="Sections">
+          <a href="#how">How it works</a>
+          <a href="#features">Features</a>
+          <a href="#security">Security</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <div class="nav-actions">
+          <a class="gh-link" href="https://github.com/MisbahKhan0009/Relayless" aria-label="Relayless on GitHub">
+            <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            <span>GitHub</span>
+            <span class="stars" data-stars hidden></span>
+          </a>
+          <a class="btn btn-green btn-sm" href="#download">Download</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <h1>Send huge files straight to another device.</h1>
+            <p class="lede">
+              Relayless moves files of any size directly between Windows PCs and Android phones. Pause it, lose Wi-Fi,
+              restart the computer: it carries on from the last verified megabyte.
+            </p>
+            <div class="cta-row">
+              <a class="btn btn-green btn-lg" data-primary-dl href="#download">Download for Windows</a>
+              <a class="btn btn-ghost btn-lg" data-secondary-dl href="#download">Get the Android app</a>
+            </div>
+            <p class="fineprint">Free and open source under the MIT license. No account, no cloud storage.</p>
+          </div>
+
+          <div class="demo" aria-label="Interactive transfer demo">
+            <div class="demo-card glass">
+              <div class="demo-head">
+                <div class="file-ico" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M14 3v5h5M10 12.5v5l4-2.5z"/></svg>
+                </div>
+                <div class="demo-title">
+                  <strong>season-2-raw-footage.zip</strong>
+                  <span>From Dhaka-Edit-Bay to Berlin-Studio</span>
+                </div>
+                <span class="route" data-route><i></i>Direct, 176 ms</span>
+              </div>
+
+              <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-bar>
+                <span class="bar-saved" data-saved></span>
+                <span class="bar-flight" data-flight></span>
+              </div>
+
+              <div class="demo-stats">
+                <div><span class="k">Saved on disk</span><span class="v" data-saved-text>0 GB</span></div>
+                <div><span class="k">Speed</span><span class="v" data-speed>0 MB/s</span></div>
+                <div><span class="k">Time left</span><span class="v" data-eta>–</span></div>
+              </div>
+
+              <div class="demo-actions">
+                <button class="btn btn-green btn-md" type="button" data-toggle>Pause</button>
+                <button class="btn btn-ghost btn-md" type="button" data-drop>Drop the connection</button>
+              </div>
+
+              <ol class="demo-log" data-log aria-live="polite"></ol>
+            </div>
+            <p class="demo-note">A live simulation. Try pausing, or cutting the connection.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="shot-band" aria-label="Relayless on Windows and Android">
+        <div class="wrap">
+          <img
+            src="assets/hero.webp"
+            width="2400"
+            height="1400"
+            alt="Relayless on Windows showing active transfers, and on an Android phone browsing a shared folder"
+            loading="eager"
+          />
+        </div>
+      </section>
+
+      <section class="section" id="how">
+        <div class="wrap">
+          <h2>Four steps, no uploads.</h2>
+          <p class="section-lede">The file never sits on a server. It travels once, from the sender's disk to the receiver's.</p>
+          <ol class="steps">
+            <li>
+              <span class="step-n">1</span>
+              <h3>Share a folder</h3>
+              <p>The sender picks one folder. Nothing outside it can be seen or opened.</p>
+            </li>
+            <li>
+              <span class="step-n">2</span>
+              <h3>Send an invite</h3>
+              <p>Copy a link-style invitation or read out a 12-character code. You approve each new device.</p>
+            </li>
+            <li>
+              <span class="step-n">3</span>
+              <h3>Pick files</h3>
+              <p>The receiver browses the folder like a file manager and chooses where to save.</p>
+            </li>
+            <li>
+              <span class="step-n">4</span>
+              <h3>Every byte checked</h3>
+              <p>Each megabyte is hash-verified on arrival, and the whole file once more before it is named.</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="wrap feature-list">
+          <article class="feature">
+            <div class="feature-copy">
+              <h2>Interruptions cost seconds, not hours.</h2>
+              <p>
+                Progress is written to disk every megabyte, after it is verified. A dropped connection, a pause, a closed
+                laptop or a power cut loses at most the block in flight. Downloads wait for the sender to come back and
+                continue on their own.
+              </p>
+              <ul class="ticks">
+                <li>Pause and resume any time</li>
+                <li>Survives app restarts and reboots</li>
+                <li>Detects if the sender changes the file mid-transfer</li>
+              </ul>
+            </div>
+            <figure class="feature-shot glass">
+              <img src="assets/screens/desktop-transfers.webp" width="2560" height="1600" loading="lazy" alt="Transfers screen with a 64 GB download in progress and its verified progress details" />
+            </figure>
+          </article>
+
+          <article class="feature flip">
+            <div class="feature-copy">
+              <h2>Fast on long, lossy links.</h2>
+              <p>
+                Relayless uses QUIC with BBR congestion control and many parallel streams, so a Dhaka to Berlin link stays
+                full instead of collapsing at the first lost packet. It runs at low CPU priority, streams from disk in
+                small blocks and never loads a whole file into memory.
+              </p>
+              <ul class="ticks">
+                <li>Up to 32 parallel streams per file</li>
+                <li>Optional upload and download limits</li>
+                <li>Around 45 MB of memory for the app process on Windows</li>
+              </ul>
+            </div>
+            <figure class="feature-shot glass">
+              <img src="assets/screens/desktop-overview.webp" width="2560" height="1600" loading="lazy" alt="Overview screen showing receive speed, active transfers and devices" />
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature-copy">
+              <h2>Browse first, then choose.</h2>
+              <p>
+                The receiver sees the shared folder with names, sizes and dates, searches it, and downloads single files
+                or whole folders. Big folders load as you scroll, so a directory with thousands of files stays quick.
+              </p>
+              <ul class="ticks">
+                <li>Folder downloads keep their structure</li>
+                <li>Read-only: nothing can be changed or deleted</li>
+              </ul>
+            </div>
+            <figure class="feature-shot glass">
+              <img src="assets/screens/desktop-browse.webp" width="2560" height="1600" loading="lazy" alt="Remote folder browser with three files selected for download" />
+            </figure>
+          </article>
+
+          <article class="feature flip phone-feature">
+            <div class="feature-copy">
+              <h2>The same app on your phone.</h2>
+              <p>
+                Send from a PC to a phone, from a phone to a PC, or phone to phone. On Android, transfers keep running with
+                the screen off and show their progress in a notification.
+              </p>
+              <ul class="ticks">
+                <li>Android 7.0 and newer</li>
+                <li>Saves to Download/Relayless by default</li>
+              </ul>
+            </div>
+            <div class="phones">
+              <img src="assets/screens/phone-home.webp" width="1170" height="2532" loading="lazy" alt="Relayless home screen on Android" />
+              <img src="assets/screens/phone-transfers.webp" width="1170" height="2532" loading="lazy" alt="Transfers screen on Android" />
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="security">
+        <div class="wrap security">
+          <div>
+            <h2>Private by design.</h2>
+            <p class="section-lede">
+              Connections are end-to-end encrypted and tied to each device's own key. Public relays only help the two
+              devices find each other; in the default direct-only mode, no file data ever passes through them.
+            </p>
+          </div>
+          <ul class="sec-list">
+            <li><strong>Encrypted end to end</strong><span>QUIC with TLS 1.3. Each device has an Ed25519 identity that is checked on every connection.</span></li>
+            <li><strong>Invitations you control</strong><span>Random 128-bit keys that expire, can be limited to a number of devices, and can be revoked.</span></li>
+            <li><strong>Approval for new devices</strong><span>You see the device name before it can browse anything. Remove access in one click.</span></li>
+            <li><strong>One folder, read-only</strong><span>Path tricks, symlinks and junctions that point outside the folder are refused by the sender.</span></li>
+            <li><strong>Direct-only by default</strong><span>The app shows whether a route is direct or relayed and never switches silently.</span></li>
+            <li><strong>No account, no telemetry</strong><span>Nothing to sign up for. File names and contents never leave the two devices.</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section" id="compare">
+        <div class="wrap">
+          <h2>How it compares.</h2>
+          <div class="table-wrap glass">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col"><span class="sr">Capability</span></th>
+                  <th scope="col" class="us">Relayless</th>
+                  <th scope="col">Cloud share links</th>
+                  <th scope="col">Chat and messaging apps</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">File size limit</th><td class="us">None</td><td>Usually a few GB</td><td>Usually 2 GB or less</td></tr>
+                <tr><th scope="row">Travels over the internet</th><td class="us">Once, device to device</td><td>Twice: upload, then download</td><td>Twice, through their servers</td></tr>
+                <tr><th scope="row">Copy kept on a server</th><td class="us">Never</td><td>Until the link expires</td><td>Often</td></tr>
+                <tr><th scope="row">Resumes after a drop</th><td class="us">From the last megabyte</td><td>Sometimes</td><td>Rarely</td></tr>
+                <tr><th scope="row">Verifies every byte</th><td class="us">Yes, block by block</td><td>Varies</td><td>Varies</td></tr>
+                <tr><th scope="row">Both devices online</th><td class="us">Required</td><td>Not required</td><td>Not required</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="fineprint">Relayless trades the convenience of an always-on server for privacy and no size limits: the sender has to stay online while the receiver downloads.</p>
+        </div>
+      </section>
+
+      <section class="section" id="download">
+        <div class="wrap">
+          <h2>Download Relayless.</h2>
+          <p class="section-lede">
+            <span data-version>Latest release</span>. Install it on both devices; they need the same version to talk to
+            each other.
+          </p>
+          <div class="dl-grid">
+            <a class="dl glass" data-dl="windows" href="https://github.com/MisbahKhan0009/Relayless/releases/latest">
+              <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path fill="currentColor" d="M3 5.5 10.5 4.4v7.1H3zm0 13L10.5 19.6v-7H3zm8.5 1.3L21 21v-8.4h-9.5zm0-15.6v7.3H21V3z"/></svg>
+              <span class="dl-name">Windows</span>
+              <span class="dl-meta" data-meta="windows">Windows 10 and 11, 64-bit installer</span>
+              <span class="btn btn-green btn-md">Download .exe</span>
+            </a>
+            <a class="dl glass" data-dl="android" href="https://github.com/MisbahKhan0009/Relayless/releases/latest">
+              <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path fill="currentColor" d="M17.6 9.48 19.44 6.3a.38.38 0 0 0-.66-.38l-1.86 3.22a11.5 11.5 0 0 0-9.84 0L5.22 5.92a.38.38 0 0 0-.66.38L6.4 9.48A10.8 10.8 0 0 0 1 18h22a10.8 10.8 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg>
+              <span class="dl-name">Android</span>
+              <span class="dl-meta" data-meta="android">Android 7.0 and newer, any phone or tablet</span>
+              <span class="btn btn-green btn-md">Download .apk</span>
+            </a>
+          </div>
+          <details class="install-help">
+            <summary>Seeing a warning when you install?</summary>
+            <p>
+              Relayless is new and not yet code-signed by a certificate authority, so Windows SmartScreen may show
+              “Windows protected your PC”: choose <b>More info</b>, then <b>Run anyway</b>. On Android, allow your browser
+              or file manager to install apps when asked; if Play Protect shows a warning, choose <b>More details</b>, then
+              <b>Install anyway</b>. Every release lists SHA-256 checksums so you can confirm the file is genuine.
+            </p>
+          </details>
+        </div>
+      </section>
+
+      <section class="section" id="open-source">
+        <div class="wrap oss glass">
+          <div>
+            <h2>Built in the open.</h2>
+            <p>
+              Relayless is MIT licensed. The transfer engine is a Rust library with end-to-end tests for interruptions,
+              crashes, corruption and source changes; the apps use Tauri with a React interface. Issues, ideas and pull
+              requests are welcome.
+            </p>
+            <div class="cta-row">
+              <a class="btn btn-green btn-md" href="https://github.com/MisbahKhan0009/Relayless">View the source</a>
+              <a class="btn btn-ghost btn-md" href="https://github.com/MisbahKhan0009/Relayless/blob/main/CONTRIBUTING.md">Contributing guide</a>
+            </div>
+          </div>
+          <pre class="code" aria-label="Build from source"><code><span class="c"># Build and run from source</span>
+git clone https://github.com/MisbahKhan0009/Relayless
+cd Relayless &amp;&amp; npm ci
+npm run tauri dev
+
+<span class="c"># Engine tests: real transfers, pauses,</span>
+<span class="c"># crashes, corruption, source changes</span>
+cargo test -p relayless-core --release</code></pre>
+        </div>
+      </section>
+
+      <section class="section" id="faq">
+        <div class="wrap faq">
+          <h2>Questions.</h2>
+          <div class="faq-list">
+            <details>
+              <summary>Do both devices have to be online?</summary>
+              <p>Yes, while the transfer runs. If either one goes offline, the download waits and continues from where it stopped when both are back.</p>
+            </details>
+            <details>
+              <summary>What if a direct connection is impossible?</summary>
+              <p>Some strict networks block direct paths. In direct-only mode the transfer waits and explains why. You can allow relay fallback in Settings: data then passes through a public relay, still end-to-end encrypted, usually more slowly.</p>
+            </details>
+            <details>
+              <summary>Is there a size limit?</summary>
+              <p>No. Files are streamed from disk in small blocks, so a 500 GB file uses the same memory as a 5 MB one. You need enough free space on the receiving side.</p>
+            </details>
+            <details>
+              <summary>How fast is it?</summary>
+              <p>As fast as the slower of the two connections allows, which is usually the sender's upload speed. Relayless is tuned to keep long-distance links full.</p>
+            </details>
+            <details>
+              <summary>Can the other person see my other files?</summary>
+              <p>No. They can only list and download from the folder you shared, and only after you approve their device. You can stop sharing or remove a device at any time.</p>
+            </details>
+            <details>
+              <summary>Does it cost anything?</summary>
+              <p>No. Relayless is free and open source. There is no account and no paid tier.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <span class="brand small">Relayless</span>
+        <span>MIT licensed. Made for people who move big files.</span>
+        <nav aria-label="Footer">
+          <a href="https://github.com/MisbahKhan0009/Relayless">GitHub</a>
+          <a href="https://github.com/MisbahKhan0009/Relayless/releases">Releases</a>
+          <a href="https://github.com/MisbahKhan0009/Relayless/blob/main/SECURITY.md">Security</a>
+          <a href="https://github.com/MisbahKhan0009/Relayless/issues">Report an issue</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

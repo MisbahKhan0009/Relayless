@@ -42,7 +42,7 @@ function Logo() {
       <circle cx="6" cy="12" r="3.6" fill="var(--accent)" />
       <rect x="6" y="10.6" width="12" height="2.8" rx="1.4" fill="var(--accent)" />
       <circle cx="18" cy="12" r="3.6" fill="var(--accent)" />
-      <circle cx="18" cy="12" r="1.7" fill="#15181c" />
+      <circle cx="18" cy="12" r="1.7" fill="#121212" />
     </svg>
   );
 }

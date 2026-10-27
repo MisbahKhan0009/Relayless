@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { StoreProvider } from "./store";
+import "@fontsource-variable/figtree";
 import "./styles.css";
 
 // Desktop app: no browser context menu or accidental reloads.

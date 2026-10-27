@@ -47,7 +47,7 @@ fn show_main(app: &AppHandle) {
         .inner_size(1200.0, 780.0)
         .min_inner_size(960.0, 620.0)
         .theme(Some(tauri::Theme::Dark))
-        .background_color(tauri::window::Color(12, 13, 15, 255))
+        .background_color(tauri::window::Color(18, 18, 18, 255))
         .center()
         .build();
     if let Err(e) = built {

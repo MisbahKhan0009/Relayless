@@ -1,0 +1,44 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths: ["website/**", ".github/workflows/website.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: website
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish to GitHub Pages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check links to local files
+        shell: bash
+        run: |
+          cd website
+          missing=0
+          for ref in $(grep -oE '(src|href)="[^"#:]+"' index.html | sed -E 's/^(src|href)="//; s/"$//' | sort -u); do
+            [ -e "$ref" ] || { echo "::error title=Missing file::website/$ref"; missing=1; }
+          done
+          exit $missing
+
+      - name: Publish website/ to the gh-pages branch
+        shell: bash
+        run: |
+          cd website
+          touch .nojekyll
+          git init -q
+          git checkout -q -b gh-pages
+          git add -A
+          git -c user.name="relayless-ci" -c user.email="relayless-ci@users.noreply.github.com" \
+            commit -qm "Website from ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+          echo "::notice title=Website published::https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/"

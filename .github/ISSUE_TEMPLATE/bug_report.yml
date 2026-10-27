@@ -1,0 +1,55 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For security problems, please use the [private security report](https://github.com/MisbahKhan0009/Relayless/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Include exact error messages.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Share a folder on Windows
+        2. Connect from Android with a short code
+        3. Start downloading a 10 GB file, then pause
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Relayless version on each device
+      description: Settings → About
+      placeholder: "Sender 0.1.0 build 21, receiver 0.1.0 build 21"
+    validations:
+      required: true
+  - type: input
+    id: platforms
+    attributes:
+      label: Devices and OS
+      placeholder: "Windows 11 23H2 → Android 13 (Realme 9i)"
+    validations:
+      required: true
+  - type: dropdown
+    id: route
+    attributes:
+      label: Connection route shown in the app
+      options:
+        - Direct
+        - Relayed
+        - Couldn't connect
+        - Not sure
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: From %APPDATA%\app.relayless.desktop\logs on Windows. Logs have no file contents but may include file names.
+      render: text

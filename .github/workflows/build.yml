@@ -3,8 +3,26 @@ name: Build
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "website/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - ".github/dependabot.yml"
+      - ".github/workflows/website.yml"
     tags: ["v*"]
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "website/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - ".github/dependabot.yml"
+      - ".github/workflows/website.yml"
   workflow_dispatch:
   release:
     types: [published]
@@ -122,7 +140,7 @@ jobs:
         with:
           tag_name: v0.1.0-build${{ github.run_number }}
           name: Relayless 0.1.0 (build ${{ github.run_number }})
-          body_path: RELEASE_NOTES.md
+          body_path: .github/release-notes.md
           make_latest: true
           files: |
             ${{ steps.out.outputs.file }}
@@ -275,6 +293,6 @@ jobs:
         with:
           tag_name: v0.1.0-build${{ github.run_number }}
           name: Relayless 0.1.0 (build ${{ github.run_number }})
-          body_path: RELEASE_NOTES.md
+          body_path: .github/release-notes.md
           files: out/*
           make_latest: true

@@ -1,34 +1,38 @@
-/* Relayless design tokens. Dark is the default; a light theme only needs a new token set. */
+/* Relayless design tokens: near-black base, vivid green accent, glass surfaces. */
 :root {
-  --bg: #0c0d0f;
-  --surface: #121417;
-  --surface-2: #171a1e;
-  --surface-3: #1e2227;
-  --hover: #1b1f24;
-  --border: #23272e;
-  --border-strong: #2f343c;
-  --text: #e7e9ec;
-  --text-2: #a2a8b2;
-  --text-3: #6c737e;
-  --accent: #2dd4bf;
-  --accent-strong: #5eead4;
-  --accent-ink: #032420;
-  --accent-soft: rgba(45, 212, 191, 0.12);
-  --ok: #4ade80;
-  --ok-soft: rgba(74, 222, 128, 0.12);
-  --warn: #fbbf24;
-  --warn-soft: rgba(251, 191, 36, 0.12);
-  --err: #f87171;
-  --err-soft: rgba(248, 113, 113, 0.12);
-  --info: #7cb4ff;
-  --info-soft: rgba(124, 180, 255, 0.12);
-  --radius: 8px;
-  --radius-lg: 12px;
-  --shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.35);
-  --font: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, sans-serif;
+  --bg: #121212;
+  --elev: #181818;
+  --raised: #282828;
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-2: rgba(255, 255, 255, 0.065);
+  --surface-3: rgba(255, 255, 255, 0.095);
+  --hover: rgba(255, 255, 255, 0.075);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --text: #ffffff;
+  --text-2: #b3b3b3;
+  --text-3: #7c7c7c;
+  --accent: #1ed760;
+  --accent-strong: #3be477;
+  --accent-ink: #000000;
+  --accent-soft: rgba(30, 215, 96, 0.14);
+  --ok: #1ed760;
+  --ok-soft: rgba(30, 215, 96, 0.14);
+  --warn: #ffc864;
+  --warn-soft: rgba(255, 200, 100, 0.13);
+  --err: #f15e6c;
+  --err-soft: rgba(241, 94, 108, 0.14);
+  --info: #7ab8ff;
+  --info-soft: rgba(122, 184, 255, 0.13);
+  --radius: 10px;
+  --radius-lg: 18px;
+  --glass-blur: blur(22px) saturate(150%);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 48px rgba(0, 0, 0, 0.45);
+  --font: "Figtree Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Figtree Variable", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
-  --sidebar: 224px;
+  --sidebar: 236px;
   color-scheme: dark;
 }
 
@@ -44,7 +48,11 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  /* Static glows give the glass surfaces something to refract. */
+  background:
+    radial-gradient(1100px 760px at 6% -12%, rgba(30, 215, 96, 0.2), transparent 62%),
+    radial-gradient(900px 700px at 104% 112%, rgba(70, 110, 255, 0.11), transparent 60%),
+    var(--bg);
   color: var(--text);
   font: 14px/1.45 var(--font);
   -webkit-font-smoothing: antialiased;
@@ -1331,6 +1339,229 @@ input[type="range"] {
   margin-bottom: 2px;
 }
 
+
+/* ------------------------------------------------------------------ glass layer */
+
+h1,
+h2,
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.sidebar {
+  background: rgba(18, 18, 18, 0.55);
+  border-right-color: var(--border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.topbar {
+  background: rgba(18, 18, 18, 0.35);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.topbar h1 {
+  font-size: 22px;
+}
+.brand {
+  font-size: 17px;
+  font-weight: 800;
+}
+.brand-mark {
+  background: #000;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.nav-item {
+  height: 40px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: var(--glass-edge);
+}
+.nav-count.hot {
+  color: #000;
+}
+.panel,
+.stat,
+.hero-tile,
+.table {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--glass-edge);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.hero-tile:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.hero-tile .ico,
+.share-ico,
+.onboard-point .i {
+  background: var(--accent);
+  color: #000;
+}
+.share-ico.off {
+  background: var(--surface-3);
+  color: var(--text-3);
+}
+.thead,
+.m-thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+.trow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.stat .v {
+  font-size: 26px;
+  font-weight: 750;
+}
+
+/* Pill buttons */
+.btn {
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  transition: transform 0.12s ease, background 0.12s, border-color 0.12s, color 0.12s;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn-primary:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+.btn-secondary {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: #fff;
+}
+.btn-danger {
+  border-color: rgba(241, 94, 108, 0.45);
+}
+.icon-btn {
+  border-radius: 999px;
+}
+.icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* Inputs */
+.input,
+textarea.input,
+select.input,
+.search,
+.dest-box,
+.code-box {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: transparent;
+}
+.input:focus {
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.09);
+}
+.search {
+  border-radius: 999px;
+  padding: 0 14px;
+}
+.search:focus-within {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+.segmented {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: transparent;
+  border-radius: 999px;
+}
+.segmented button {
+  border-radius: 999px;
+}
+.segmented button.on {
+  background: #fff;
+  color: #000;
+  box-shadow: none;
+}
+.switch {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Progress */
+.progress {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Status chips */
+.pill {
+  height: 24px;
+  padding: 0 10px;
+  font-weight: 650;
+}
+.job-ico,
+.mrow-ico,
+.empty-icon {
+  background: rgba(255, 255, 255, 0.07);
+}
+.job-ico.tone-accent,
+.job-ico.tone-ok {
+  background: var(--accent-soft);
+}
+.job-details,
+.notice,
+.sub-list {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--border);
+}
+.notice.warn {
+  background: var(--warn-soft);
+}
+.notice.err {
+  background: var(--err-soft);
+}
+
+/* Floating layers */
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.modal {
+  background: rgba(30, 30, 30, 0.82);
+  border-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border-radius: 22px;
+}
+.selection-bar,
+.toast {
+  background: rgba(40, 40, 40, 0.86);
+  border-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
+.selection-bar {
+  border-radius: 999px;
+  padding: 10px 10px 10px 22px;
+}
+.qr {
+  border-radius: 14px;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar,
+  .topbar,
+  .modal,
+  .selection-bar,
+  .toast {
+    background: var(--elev);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 /* ------------------------------------------------------------------ phones */
 
 .nav-short {
@@ -1810,5 +2041,89 @@ html {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+
+
+@media (max-width: 760px) {
+  /* Blur only on fixed chrome; scrolling lists stay cheap on low-end phones. */
+  .panel,
+  .stat,
+  .hero-tile,
+  .table {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .sidebar {
+    background: rgba(18, 18, 18, 0.82);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+  }
+  .nav-item {
+    height: 54px;
+    border-radius: 0;
+    color: var(--text-3);
+  }
+  .nav-item.active {
+    background: transparent;
+    box-shadow: none;
+    color: #fff;
+  }
+  .nav-item.active svg {
+    color: var(--accent);
+  }
+  .topbar {
+    background: rgba(18, 18, 18, 0.6);
+  }
+  .topbar h1 {
+    font-size: 20px;
+  }
+  .modal {
+    border-radius: 24px 24px 0 0;
+    background: rgba(28, 28, 28, 0.9);
+  }
+  .m-selbar {
+    border-radius: 999px;
+  }
+  .mcheck.on {
+    color: #000;
+  }
+}
+
+/* Sentence-case section labels (no shouty caps) */
+.section-head h3,
+.sub-title,
+.stat .k,
+.thead {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.section-head h3 {
+  font-size: 17px;
+  color: var(--text);
+  font-weight: 700;
+}
+.sub-title {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 700;
+}
+.stat .k {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.thead {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .modal {
+    background: rgba(30, 30, 30, 0.97);
+  }
+  .modal-backdrop {
+    background: rgba(0, 0, 0, 0.7);
   }
 }
