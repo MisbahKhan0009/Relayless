@@ -64,7 +64,7 @@ export const STATUS_TEXT: Record<JobStatus, string> = {
   needs_attention: "Needs attention",
 };
 
-export type Tone = "accent" | "ok" | "warn" | "err" | "muted" | "info";
+export type Tone = "accent" | "ok" | "warn" | "err" | "muted" | "info" | "out";
 
 export function statusTone(s: JobStatus): Tone {
   switch (s) {

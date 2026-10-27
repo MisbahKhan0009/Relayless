@@ -108,6 +108,10 @@ export const data: Record<string, any> = {
   }
   data.list_history = out.sort((a, b) => b.finishedAt - a.finishedAt);
 }
+data.list_outgoing = [
+  { id: "o1", peerId: "77aa88bb99", deviceName: "Lena's laptop", shareName: "Client deliveries", name: "scene-014-take-2.mov", path: ["scene-014-take-2.mov"], size: 6.4 * GB, sentBytes: 2.71 * GB, bps: 3.4 * 1024 * 1024, status: "sending", startedAt: now - 900e3, updatedAt: now },
+  { id: "o2", peerId: "77aa88bb99", deviceName: "Lena's laptop", shareName: "Client deliveries", name: "color-grade-notes.pdf", path: ["color-grade-notes.pdf"], size: 4.2 * 1024 * 1024, sentBytes: 4.2 * 1024 * 1024, bps: 0, status: "verified", startedAt: now - 1200e3, updatedAt: now - 600e3 },
+];
 data["plugin:relayless-android|has_all_files_access"] = { granted: false };
 data["plugin:relayless-android|battery_status"] = { unrestricted: false };
 data["list_local_dir"] = { path: "/storage/emulated/0", parent: null, root: "/storage/emulated/0", dirs: ["Alarms", "DCIM", "Documents", "Download", "Movies", "Music", "Pictures"] };

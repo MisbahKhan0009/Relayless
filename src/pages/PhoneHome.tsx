@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import { ArrowUpRight, ChevronRight, FolderUp, KeyRound, Lock, Monitor, Upload as UploadIcon } from "lucide-react";
-import { bytes, isActive, speed } from "../format";
+import { ArrowUpRight, ChevronRight, FolderUp, KeyRound, Lock, Monitor } from "lucide-react";
+import { bytes, isActive } from "../format";
 import { useStore } from "../store";
 import { LiveFlow, useFlowActive } from "../flow";
 import { StorageAccessNotice } from "../android";
 import { Button, RouteBadge } from "../ui";
-import { JobRow } from "./Transfers";
+import { JobRow, SendRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
 import { DayDot } from "./History";
 
@@ -76,7 +76,8 @@ function WeekStrip() {
 }
 
 export default function PhoneHome() {
-  const { jobs, uploads, remotes, grants, shares, history, setPage, setConnectOpen, openBrowser } = useStore();
+  const { jobs, uploads, outgoing, remotes, grants, shares, history, setPage, setConnectOpen, openBrowser } = useStore();
+  const sendingNow = outgoing.filter((o) => o.status === "sending" || o.status === "waiting");
   const shareFolder = useShareFolder();
   const flowActive = useFlowActive();
   const list = useMemo(() => Object.values(jobs).sort((a, b) => b.updatedAt - a.updatedAt), [jobs]);
@@ -103,23 +104,16 @@ export default function PhoneHome() {
 
       {moving && <LiveFlow />}
 
-      {uploads.filter((u) => u.bps > 0 || u.files.length).map((u) => (
-        <div className="panel phome-up" key={u.peerId}>
-          <UploadIcon size={16} className="faint" aria-hidden="true" />
-          <span className="grow small">
-            <b>{u.deviceName}</b> is downloading from you
-          </span>
-          <span className="num small">{speed(u.bps)}</span>
-        </div>
-      ))}
-
-      {active.length > 0 && (
+      {(active.length > 0 || sendingNow.length > 0) && (
         <section>
           <div className="phome-head">
             <h2>In progress</h2>
             <button className="link small" onClick={() => setPage("transfers")}>All transfers</button>
           </div>
           <div className="panel">
+            {sendingNow.slice(0, 3).map((o) => (
+              <SendRow key={o.id} o={o} compact />
+            ))}
             {active.slice(0, 3).map((j) => (
               <JobRow key={j.id} job={j} compact />
             ))}

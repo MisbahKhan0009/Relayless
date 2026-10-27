@@ -54,6 +54,10 @@ pub enum Request {
         /// Byte offset inside the chunk to start from (a multiple of BLOCK).
         #[serde(default)]
         from: u64,
+        /// Bytes of this file the receiver already has, so the sender can
+        /// show real progress. Older receivers leave it out.
+        #[serde(default)]
+        have: Option<u64>,
     },
     /// Sent by the receiver after a file is complete and verified, so the
     /// sender can keep its own history entry. Older senders reject it,

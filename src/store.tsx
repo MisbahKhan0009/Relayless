@@ -8,6 +8,7 @@ import {
   type HistoryEntry,
   type Job,
   type NetworkStatus,
+  type Outgoing,
   type PeerStatus,
   type Remote,
   type Settings,
@@ -42,6 +43,7 @@ interface Store {
   remotes: Remote[];
   jobs: Record<string, Job>;
   uploads: Upload[];
+  outgoing: Outgoing[];
   pending: AccessRequest[];
   activity: Activity[];
   history: HistoryEntry[];
@@ -92,6 +94,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [remotes, setRemotes] = useState<Remote[]>([]);
   const [jobs, setJobs] = useState<Record<string, Job>>({});
   const [uploads, setUploads] = useState<Upload[]>([]);
+  const [outgoing, setOutgoing] = useState<Outgoing[]>([]);
   const [pending, setPending] = useState<AccessRequest[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -143,6 +146,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     sub<Activity>("activity", (a) => setActivity((l) => [a, ...l].slice(0, 300)));
     sub<NetworkStatus>("network-status", setNetwork);
     sub<Upload[]>("uploads", setUploads);
+    sub<Outgoing[]>("outgoing", setOutgoing);
     sub<{ jobId: string; checked: number; total: number }>("integrity-progress", (p) =>
       setIntegrity((m) => ({ ...m, [p.jobId]: { checked: p.checked, total: p.total } })),
     );
@@ -170,6 +174,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setPending(p);
         setActivity(a);
         api.listHistory(0).then(setHistory).catch(() => {});
+        api.listOutgoing().then((o) => setOutgoing(o ?? [])).catch(() => {});
       } finally {
         setReady(true);
       }
@@ -202,6 +207,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       remotes,
       jobs,
       uploads,
+      outgoing,
       pending,
       activity,
       history,
@@ -221,7 +227,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refreshJobs,
       refreshHistory,
     }),
-    [ready, version, dataDir, settings, network, shares, grants, remotes, jobs, uploads, pending, activity, history, integrity, page, browse, toasts, connectOpen, openBrowser, toast, saveSettings, refreshShares, refreshGrants, refreshRemotes, refreshJobs, refreshHistory],
+    [ready, version, dataDir, settings, network, shares, grants, remotes, jobs, uploads, outgoing, pending, activity, history, integrity, page, browse, toasts, connectOpen, openBrowser, toast, saveSettings, refreshShares, refreshGrants, refreshRemotes, refreshJobs, refreshHistory],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

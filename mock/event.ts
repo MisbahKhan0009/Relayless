@@ -26,6 +26,11 @@ function start() {
       emit("job-updated", { ...j });
     }
     const up = (3.1 + 0.9 * Math.sin(i / 5) + 0.3 * Math.cos(i / 1.7)) * 1024 * 1024;
+    const o = data.list_outgoing[0];
+    o.sentBytes = Math.min(o.size, o.sentBytes + up);
+    o.bps = up;
+    o.updatedAt = Date.now();
+    emit("outgoing", data.list_outgoing.map((x: any) => ({ ...x })));
     emit("uploads", [{ peerId: "77aa88bb99", deviceName: "Lena's laptop", bps: up, totalSent: 4.2 * 1024 ** 3 + i * up, files: ["color-grade-notes.pdf", "scene-014-take-2.mov"] }]);
   }, 1000);
 }

@@ -374,10 +374,32 @@ pub struct UploadDto {
     pub files: Vec<String>,
 }
 
+/// A file this device is sending, with the receiver's progress.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OutgoingDto {
+    pub id: String,
+    pub peer_id: String,
+    pub device_name: String,
+    pub share_name: String,
+    pub name: String,
+    pub path: Vec<String>,
+    pub size: u64,
+    /// Bytes the receiver has (its own count plus what was sent since).
+    pub sent_bytes: u64,
+    pub bps: f64,
+    /// "sending", "waiting" (receiver paused or offline), "delivered"
+    /// (all bytes sent, receiver still checking) or "verified".
+    pub status: String,
+    pub started_at: i64,
+    pub updated_at: i64,
+}
+
 /// Events pushed to the UI.
 #[derive(Clone, Debug)]
 pub enum CoreEvent {
     Uploads(Vec<UploadDto>),
+    Outgoing(Vec<OutgoingDto>),
     JoinStatus { message: String, safety_words: Option<Vec<String>> },
     HistoryChanged,
     JobUpdated(JobSnapshot),
@@ -398,6 +420,7 @@ impl CoreEvent {
     pub fn name(&self) -> &'static str {
         match self {
             CoreEvent::Uploads(_) => "uploads",
+            CoreEvent::Outgoing(_) => "outgoing",
             CoreEvent::JoinStatus { .. } => "join-status",
             CoreEvent::HistoryChanged => "history-changed",
             CoreEvent::JobUpdated(_) => "job-updated",
@@ -419,6 +442,7 @@ impl CoreEvent {
         use serde_json::json;
         match self {
             CoreEvent::Uploads(u) => serde_json::to_value(u).unwrap_or_default(),
+            CoreEvent::Outgoing(o) => serde_json::to_value(o).unwrap_or_default(),
             CoreEvent::JoinStatus { message, safety_words } => {
                 json!({ "message": message, "safetyWords": safety_words })
             }

@@ -9,6 +9,8 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 - **History.** A month calendar with a dot per day sized by data moved (hover for the files), totals per device pair, and a breakdown by file type. Stored only on the device; keep it for 1 year (default), 90 days, 30 days, forever or not at all, with or without file names.
 - **Safety words.** Five words derived from both devices' keys, shown when a device asks for access, while connecting, and on device lists.
 - **Live speed graph** on Overview and Transfers: receive and send speed for the last two minutes, with markers for pauses, reconnects and route changes.
+- **Sending is visible.** Files this device sends now appear in Transfers (new Sending tab), on Overview and on the phone Home screen, each with the receiver's progress, a percentage, speed, time left and a "Delivered and verified" state once the receiver has checked the file.
+- Downloads show a percentage too.
 - Privacy section in Settings.
 - New phone Home screen: big Send and Receive buttons, live speed, transfers in progress, this week's activity as dots, devices and your shared folders.
 - Phone navigation trimmed to Home, Devices, Transfers and More; Shared folders, History, Activity and Settings open from More.

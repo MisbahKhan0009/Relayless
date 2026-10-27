@@ -1,9 +1,9 @@
-import { ArrowUpRight, FolderUp, KeyRound, Monitor, Upload as UploadIcon } from "lucide-react";
+import { ArrowUpRight, FolderUp, KeyRound, Monitor } from "lucide-react";
 import { useMemo } from "react";
-import { bytes, isActive, speed, ago } from "../format";
+import { isActive, ago } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, RouteBadge, SectionHeader, usePhone } from "../ui";
-import { JobRow } from "./Transfers";
+import { JobRow, SendRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
 import { StorageAccessNotice } from "../android";
 import { LiveFlow, useFlowActive } from "../flow";
@@ -14,7 +14,8 @@ export default function Overview() {
 }
 
 function DesktopOverview() {
-  const { jobs, uploads, remotes, grants, activity, setPage, setConnectOpen, openBrowser } = useStore();
+  const { jobs, uploads, outgoing, remotes, grants, activity, setPage, setConnectOpen, openBrowser } = useStore();
+  const sendingNow = outgoing.filter((o) => o.status === "sending" || o.status === "waiting");
   const shareFolder = useShareFolder();
   const list = useMemo(() => Object.values(jobs).sort((a, b) => b.updatedAt - a.updatedAt), [jobs]);
   const active = list.filter((j) => isActive(j.status) || j.status === "needs_attention");
@@ -44,19 +45,16 @@ function DesktopOverview() {
 
       {(flowActive || down > 0 || up > 0) && <LiveFlow />}
 
-      {uploads.length > 0 && (
+      {sendingNow.length > 0 && (
         <div>
-          <SectionHeader title="Sending now" />
-          <div className="panel row-list">
-            {uploads.map((u) => (
-              <div className="row" key={u.peerId}>
-                <UploadIcon size={16} className="faint" />
-                <div className="stack grow">
-                  <span className="truncate"><b>{u.deviceName}</b> is downloading {u.files.length ? u.files.join(", ") : "from you"}</span>
-                  <span className="small faint num">{bytes(u.totalSent)} sent this session</span>
-                </div>
-                <span className="num">{speed(u.bps)}</span>
-              </div>
+          <SectionHeader title="Sending now">
+            <Button size="sm" variant="ghost" onClick={() => setPage("transfers")} icon={<ArrowUpRight size={14} />}>
+              All transfers
+            </Button>
+          </SectionHeader>
+          <div className="panel">
+            {sendingNow.slice(0, 5).map((o) => (
+              <SendRow key={o.id} o={o} compact />
             ))}
           </div>
         </div>

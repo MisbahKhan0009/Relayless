@@ -905,6 +905,7 @@ async fn fetch_chunk(
             chunk_size: row.chunk_size,
             index: idx,
             from: done,
+            have: Some(h.done_bytes().min(row.size)),
         },
     )
     .await

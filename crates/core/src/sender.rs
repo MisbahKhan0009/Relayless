@@ -128,10 +128,10 @@ async fn handle_stream(
             };
             write_frame(&mut send, &resp).await?;
         }
-        Request::Chunk { share, path, size, mtime_ms, chunk_size, index, from } => {
+        Request::Chunk { share, path, size, mtime_ms, chunk_size, index, from, have } => {
             match authorize(inner, peer, &share) {
                 Ok(s) => {
-                    serve_chunk(inner, peer, conn, &mut send, &s, &path, size, mtime_ms, chunk_size, index, from)
+                    serve_chunk(inner, peer, conn, &mut send, &s, &path, size, mtime_ms, chunk_size, index, from, have)
                         .await?
                 }
                 Err(r) => write_frame(&mut send, &r).await?,
@@ -343,9 +343,6 @@ struct ReceiptIn {
 /// Only accepted for a file that exists in the share at the stated size.
 async fn record_sent(inner: &Arc<Inner>, peer: EndpointId, share: &ShareRow, r: ReceiptIn) -> Response {
     let settings = inner.settings();
-    if !settings.history_on() {
-        return Response::Ack;
-    }
     let root = PathBuf::from(&share.root_path);
     let comps = r.path.clone();
     let size_ok = tokio::task::spawn_blocking(move || {
@@ -356,6 +353,15 @@ async fn record_sent(inner: &Arc<Inner>, peer: EndpointId, share: &ShareRow, r: 
     .flatten();
     if size_ok != Some(r.size) {
         return Response::err(ErrCode::NotFound, "Not found.");
+    }
+    // The receiver checked the whole file: show it as verified.
+    let of = inner.outgoing_for(peer, &share.id, &r.path, r.size);
+    of.base.store(r.size, Ordering::Relaxed);
+    of.verified.store(true, Ordering::Relaxed);
+    of.last_ms.store(now_ms(), Ordering::Relaxed);
+    inner.emit(CoreEvent::Outgoing(crate::outgoing_list(inner)));
+    if !settings.history_on() {
+        return Response::Ack;
     }
     let clean = |s: &str, n: usize| -> String { s.chars().filter(|c| !c.is_control()).take(n).collect() };
     let name = r.path.last().cloned().unwrap_or_default();
@@ -521,6 +527,7 @@ async fn serve_chunk(
     chunk_size: u64,
     index: u64,
     from: u64,
+    have: Option<u64>,
 ) -> Result<()> {
     if !(64 * 1024..=MAX_CHUNK).contains(&chunk_size)
         || chunk_size % BLOCK != 0
@@ -570,6 +577,13 @@ async fn serve_chunk(
     let display: String = path.last().cloned().unwrap_or_default();
     let stats = inner.upload_stats_for(peer);
     stats.begin(&display);
+    let of = inner.outgoing_for(peer, &share.id, path, size);
+    if let Some(h) = have {
+        of.base.store(h.min(size), Ordering::Relaxed);
+        of.since.store(0, Ordering::Relaxed);
+    }
+    of.active.fetch_add(1, Ordering::Relaxed);
+    of.last_ms.store(now_ms(), Ordering::Relaxed);
 
     let result: Result<()> = async {
         let mut buf = vec![0u8; BLOCK as usize];
@@ -610,6 +624,8 @@ async fn serve_chunk(
             send.write_all(&buf[..n]).await?;
             send.write_all(&hash).await?;
             stats.sent.fetch_add(n as u64, Ordering::Relaxed);
+            of.since.fetch_add(n as u64, Ordering::Relaxed);
+            of.last_ms.store(now_ms(), Ordering::Relaxed);
             pos += n as u64;
             remaining -= n as u64;
             blocks += 1;
@@ -622,5 +638,7 @@ async fn serve_chunk(
     }
     .await;
     stats.end(&display);
+    of.active.fetch_sub(1, Ordering::Relaxed);
+    of.last_ms.store(now_ms(), Ordering::Relaxed);
     result
 }

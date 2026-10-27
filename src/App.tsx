@@ -96,7 +96,7 @@ export default function App() {
   const phone = usePhone();
   const [moreOpen, setMoreOpen] = useState(false);
   const jobs = useMemo(() => Object.values(s.jobs), [s.jobs]);
-  const activeCount = jobs.filter((j) => isActive(j.status)).length;
+  const activeCount = jobs.filter((j) => isActive(j.status)).length + s.outgoing.filter((o) => o.status === "sending" || o.status === "waiting").length;
   const attention = jobs.filter((j) => j.status === "needs_attention").length;
   const down = jobs.filter((j) => j.status === "downloading").reduce((a, j) => a + j.speedBps, 0);
 

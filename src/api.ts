@@ -153,6 +153,22 @@ export interface Upload {
   files: string[];
 }
 
+/** A file this device is sending, with the receiver's progress. */
+export interface Outgoing {
+  id: string;
+  peerId: string;
+  deviceName: string;
+  shareName: string;
+  name: string;
+  path: string[];
+  size: number;
+  sentBytes: number;
+  bps: number;
+  status: "sending" | "waiting" | "delivered" | "verified";
+  startedAt: number;
+  updatedAt: number;
+}
+
 export interface Settings {
   deviceName: string;
   downloadDir: string;
@@ -251,6 +267,8 @@ export const api = {
   listActivity: (limit: number) => invoke<Activity[]>("list_activity", { limit }),
   listHistory: (sinceMs: number) => invoke<HistoryEntry[]>("list_history", { sinceMs }),
   clearHistory: () => invoke<void>("clear_history"),
+  listOutgoing: () => invoke<Outgoing[]>("list_outgoing"),
+  clearOutgoing: () => invoke<void>("clear_outgoing"),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
   listLocalDir: (path: string | null) => invoke<LocalDir>("list_local_dir", { path }),
   makeDir: (parent: string, name: string) => invoke<string>("make_dir", { parent, name }),

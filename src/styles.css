@@ -3176,3 +3176,31 @@ html {
     display: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ sending rows */
+
+.bar-out {
+  background: #9277f5;
+}
+.pill-out {
+  background: rgba(146, 119, 245, 0.16);
+  color: #c2b4ff;
+}
+.job-ico.tone-out {
+  background: rgba(146, 119, 245, 0.16);
+  color: #b3a3ff;
+}
+.job-pct {
+  color: var(--text);
+  font-weight: 650;
+}
+.send-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 6px 18px 0;
+}
+.send-panel + .panel {
+  margin-top: 12px;
+}

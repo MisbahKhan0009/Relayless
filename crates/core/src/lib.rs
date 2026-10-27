@@ -109,6 +109,7 @@ impl Core {
             failed_hellos: Mutex::new(Default::default()),
             uploads: Mutex::new(Default::default()),
             short_codes: Mutex::new(Default::default()),
+            outgoing: Mutex::new(Default::default()),
             peers: Mutex::new(Default::default()),
             addr_hints: Mutex::new(Default::default()),
             jobs: Mutex::new(Default::default()),
@@ -877,6 +878,17 @@ impl Core {
         Ok(())
     }
 
+    /// Files this device is sending or has sent this session.
+    pub fn list_outgoing(&self) -> Vec<OutgoingDto> {
+        outgoing_list(&self.inner)
+    }
+
+    /// Forgets finished and stalled outgoing files (the list only).
+    pub fn clear_outgoing(&self) {
+        self.inner.outgoing.lock().retain(|_, o| o.active.load(Ordering::Relaxed) > 0);
+        self.inner.emit(CoreEvent::Outgoing(outgoing_list(&self.inner)));
+    }
+
     pub fn list_activity(&self, limit: u32) -> Result<Vec<ActivityDto>> {
         self.inner.db.list_activity(limit.min(1000))
     }
@@ -928,6 +940,54 @@ fn strip_verbatim(p: &Path) -> String {
     }
 }
 
+/// Snapshot of outgoing files, newest activity first.
+pub(crate) fn outgoing_list(inner: &Inner) -> Vec<OutgoingDto> {
+    let grants = inner.db.list_grants().unwrap_or_default();
+    let shares = inner.db.list_shares().unwrap_or_default();
+    let now = now_ms();
+    let mut out: Vec<OutgoingDto> = inner
+        .outgoing
+        .lock()
+        .values()
+        .map(|o| {
+            let peer_s = o.peer.to_string();
+            let size = o.size.load(Ordering::Relaxed);
+            let sent = o.progress();
+            let active = o.active.load(Ordering::Relaxed) > 0;
+            let last = o.last_ms.load(Ordering::Relaxed);
+            let status = if o.verified.load(Ordering::Relaxed) {
+                "verified"
+            } else if sent >= size && !active {
+                "delivered"
+            } else if active || now - last < 15_000 {
+                "sending"
+            } else {
+                "waiting"
+            };
+            OutgoingDto {
+                id: o.id.clone(),
+                device_name: grants
+                    .iter()
+                    .find(|g| g.peer_id == peer_s)
+                    .map(|g| g.device_name.clone())
+                    .unwrap_or_else(|| short_peer(&peer_s)),
+                peer_id: peer_s,
+                share_name: shares.iter().find(|s| s.id == o.share_id).map(|s| s.name.clone()).unwrap_or_default(),
+                name: o.path.last().cloned().unwrap_or_default(),
+                path: o.path.clone(),
+                size,
+                sent_bytes: if status == "verified" { size } else { sent },
+                bps: if status == "sending" { o.rate.lock().1 } else { 0.0 },
+                status: status.into(),
+                started_at: o.started_ms,
+                updated_at: last,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    out
+}
+
 /// Applies the history retention setting. Returns how many entries went.
 fn prune_history(inner: &Inner) -> usize {
     let cutoff = inner.settings().history_cutoff(now_ms());
@@ -971,6 +1031,7 @@ async fn network_watch(inner: Arc<Inner>) {
 async fn ticker(inner: Arc<Inner>) {
     let mut tick: u64 = 0;
     let mut had_uploads = false;
+    let mut had_outgoing = false;
     loop {
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(500)) => {}
@@ -987,6 +1048,23 @@ async fn ticker(inner: Arc<Inner>) {
             }
         }
         if tick % 2 == 0 {
+            // Per-file send rates and the outgoing list.
+            let files: Vec<_> = inner.outgoing.lock().values().cloned().collect();
+            let mut busy = false;
+            for o in &files {
+                let p = o.progress();
+                let mut r = o.rate.lock();
+                let inst = p.saturating_sub(r.0) as f64;
+                r.1 = if r.1 == 0.0 { inst } else { r.1 * 0.7 + inst * 0.3 };
+                r.0 = p;
+                if o.active.load(Ordering::Relaxed) > 0 || now_ms() - o.last_ms.load(Ordering::Relaxed) < 20_000 {
+                    busy = true;
+                }
+            }
+            if busy || had_outgoing {
+                had_outgoing = busy;
+                inner.emit(CoreEvent::Outgoing(outgoing_list(&inner)));
+            }
             let stats: Vec<_> = inner.uploads.lock().iter().map(|(k, v)| (*k, v.clone())).collect();
             if stats.is_empty() && !had_uploads {
                 continue;

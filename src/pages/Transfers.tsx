@@ -9,9 +9,12 @@ import {
   Play,
   RotateCcw,
   Trash2,
+  Upload as UploadIcon,
+  ShieldCheck,
+  Clock,
   X,
 } from "lucide-react";
-import { android, api, errorText, type Job } from "../api";
+import { android, api, errorText, type Job, type Outgoing } from "../api";
 import { isAndroid } from "../platform";
 import { bytes, dateTime, duration, isActive, mbit, speed, statusTone } from "../format";
 import { useStore } from "../store";
@@ -79,6 +82,7 @@ export function JobRow({ job, compact = false }: { job: Job; compact?: boolean }
           <span className="num">
             {job.status === "completed" ? bytes(job.size) : `${bytes(job.doneBytes)} of ${bytes(job.size)}`}
           </span>
+          {job.status !== "completed" && job.size > 0 && <span className="num job-pct">{pct(job.doneBytes, job.size)}</span>}
           {job.status === "downloading" && <span className="num">{speed(job.speedBps)}</span>}
           {job.status === "downloading" && job.etaSecs != null && <span className="num">{duration(job.etaSecs)} left</span>}
           {job.status === "verifying" && integ && <span className="num">checked {Math.round((integ.checked / Math.max(1, integ.total)) * 100)}%</span>}
@@ -205,44 +209,104 @@ export function JobRow({ job, compact = false }: { job: Job; compact?: boolean }
   );
 }
 
-type Filter = "all" | "active" | "done" | "attention";
+function pct(done: number, size: number) {
+  if (size <= 0) return "100%";
+  const p = (done / size) * 100;
+  return p > 0 && p < 1 ? "<1%" : `${Math.floor(p)}%`;
+}
+
+const SEND_TEXT: Record<Outgoing["status"], string> = {
+  sending: "Sending",
+  waiting: "Waiting for receiver",
+  delivered: "Sent, receiver is checking",
+  verified: "Delivered and verified",
+};
+
+/** A file this device is sending, shown like a download. */
+export function SendRow({ o, compact = false }: { o: Outgoing; compact?: boolean }) {
+  const done = o.status === "verified" || o.status === "delivered";
+  const tone = o.status === "verified" ? "ok" : o.status === "waiting" ? "info" : "out";
+  const left = o.bps > 1 && !done ? (o.size - o.sentBytes) / o.bps : null;
+  return (
+    <div className="job">
+      <div className={`job-ico tone-${tone}`}>
+        {o.status === "verified" ? <ShieldCheck size={17} /> : o.status === "waiting" ? <Clock size={17} /> : <UploadIcon size={17} />}
+      </div>
+      <div className="stack">
+        <div className="hstack">
+          <span className="job-title truncate selectable" title={o.path.join(" / ")}>{o.name}</span>
+        </div>
+        <div className="job-meta">
+          <span className={`pill pill-${tone === "out" ? "out" : tone}`}>
+            {o.status === "verified" ? <ShieldCheck size={13} /> : o.status === "waiting" ? <Clock size={13} /> : <UploadIcon size={13} />}
+            {o.status === "waiting" ? `Waiting for ${o.deviceName}` : SEND_TEXT[o.status]}
+          </span>
+          <span className="num">{done ? bytes(o.size) : `${bytes(o.sentBytes)} of ${bytes(o.size)}`}</span>
+          {!done && <span className="num job-pct">{pct(o.sentBytes, o.size)}</span>}
+          {o.status === "sending" && o.bps > 1 && <span className="num">{speed(o.bps)}</span>}
+          {!compact && left != null && <span className="num">{duration(left)} left</span>}
+          <span className="faint truncate">to {o.deviceName}</span>
+        </div>
+      </div>
+      <div className="job-actions" />
+      {!done && (
+        <div className="job-progress">
+          <Progress value={o.size ? o.sentBytes / o.size : 0} tone={o.status === "waiting" ? "muted" : "out"} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+type Filter = "all" | "receiving" | "sending" | "done" | "attention";
 
 export default function Transfers() {
-  const { jobs, setPage } = useStore();
+  const { jobs, outgoing, setPage, toast } = useStore();
   const flowActive = useFlowActive();
   const [filter, setFilter] = useState<Filter>("all");
   const list = useMemo(() => Object.values(jobs).sort((a, b) => b.createdAt - a.createdAt), [jobs]);
+  const sendingNow = outgoing.filter((o) => o.status === "sending" || o.status === "waiting");
+  const sentDone = outgoing.filter((o) => o.status === "verified" || o.status === "delivered");
   const counts = {
-    all: list.length,
-    active: list.filter((j) => isActive(j.status) || j.status === "paused").length,
-    done: list.filter((j) => j.status === "completed").length,
+    all: list.length + outgoing.length,
+    receiving: list.filter((j) => isActive(j.status) || j.status === "paused").length,
+    sending: sendingNow.length,
+    done: list.filter((j) => j.status === "completed").length + sentDone.length,
     attention: list.filter((j) => j.status === "needs_attention" || j.status === "failed").length,
   };
   const shown = list.filter((j) =>
     filter === "all"
       ? true
-      : filter === "active"
+      : filter === "receiving"
         ? isActive(j.status) || j.status === "paused"
         : filter === "done"
           ? j.status === "completed"
-          : j.status === "needs_attention" || j.status === "failed",
+          : filter === "attention"
+            ? j.status === "needs_attention" || j.status === "failed"
+            : false,
   );
+  const sends = filter === "all" || filter === "sending" ? outgoing : filter === "done" ? sentDone : [];
+  const sendLeft = sendingNow.reduce((a, o) => a + (o.size - o.sentBytes), 0);
   const total = list.filter((j) => j.status === "downloading").reduce((s, j) => s + j.speedBps, 0);
   const remaining = list.filter((j) => isActive(j.status)).reduce((s, j) => s + (j.size - j.doneBytes), 0);
 
   return (
     <div className="page">
       {(flowActive || total > 0) && <LiveFlow />}
-      {list.length > 0 && (
+      {(list.length > 0 || outgoing.length > 0) && (
         <p className="transfers-sum muted">
-          {counts.active > 0 ? (
+          {counts.receiving > 0 && (
             <>
-              <b className="num">{bytes(remaining)}</b> left across {counts.active} active transfer{counts.active === 1 ? "" : "s"}
+              Receiving: <b className="num">{bytes(remaining)}</b> left across {counts.receiving} file{counts.receiving === 1 ? "" : "s"}
               {total > 0 && remaining > 0 ? <>, about <b className="num">{duration(remaining / total)}</b> at the current speed</> : null}.{" "}
             </>
-          ) : (
-            "Nothing is in progress. "
           )}
+          {counts.sending > 0 && (
+            <>
+              Sending: <b className="num">{bytes(sendLeft)}</b> still to go across {counts.sending} file{counts.sending === 1 ? "" : "s"}.{" "}
+            </>
+          )}
+          {counts.receiving === 0 && counts.sending === 0 && "Nothing is in progress. "}
           {counts.done} completed and verified end to end.
         </p>
       )}
@@ -251,7 +315,8 @@ export default function Transfers() {
           {(
             [
               ["all", "All"],
-              ["active", "Active"],
+              ["receiving", "Receiving"],
+              ["sending", "Sending"],
               ["done", "Completed"],
               ["attention", "Needs attention"],
             ] as [Filter, string][]
@@ -261,10 +326,31 @@ export default function Transfers() {
             </button>
           ))}
         </div>
-        {shown.length === 0 ? (
+        {sends.length > 0 && (
+          <div className="panel send-panel">
+            {filter !== "done" && (
+              <div className="send-head">
+                <span className="small muted">Sending from this device</span>
+                {sentDone.length > 0 && filter === "sending" && (
+                  <Button size="sm" variant="ghost" onClick={() => api.clearOutgoing().catch((e) => toast(errorText(e), "err"))}>
+                    Clear finished
+                  </Button>
+                )}
+              </div>
+            )}
+            {sends.map((o) => (
+              <SendRow key={o.id} o={o} />
+            ))}
+          </div>
+        )}
+        {shown.length === 0 && sends.length === 0 ? (
           <div className="panel">
-            <Empty icon={<Download size={20} />} title={list.length === 0 ? "No transfers yet" : `Nothing ${filter === "done" ? "completed" : "here"}`}>
-              {list.length === 0 && (
+            <Empty
+              icon={filter === "sending" ? <UploadIcon size={20} /> : <Download size={20} />}
+              title={filter === "sending" ? "Nothing being sent" : list.length === 0 && outgoing.length === 0 ? "No transfers yet" : `Nothing ${filter === "done" ? "completed" : "here"}`}
+            >
+              {filter === "sending" && "When someone downloads from your shared folders, each file shows here with its progress."}
+              {filter !== "sending" && list.length === 0 && outgoing.length === 0 && (
                 <>
                   Connect to someone who shared a folder with you, then pick files to download.{" "}
                   <a href="#" onClick={(e) => { e.preventDefault(); setPage("devices"); }}>Go to remote devices</a>
@@ -272,13 +358,18 @@ export default function Transfers() {
               )}
             </Empty>
           </div>
-        ) : (
-          <div className="panel">
+        ) : shown.length > 0 ? (
+          <div className={`panel ${sends.length > 0 ? "recv-panel" : ""}`}>
+            {sends.length > 0 && filter !== "done" && (
+              <div className="send-head">
+                <span className="small muted">Receiving on this device</span>
+              </div>
+            )}
             {shown.map((j) => (
               <JobRow key={j.id} job={j} />
             ))}
           </div>
-        )}
+        ) : null}
       </div>
       <span className="hint">
         Downloads keep their verified progress through disconnects, app restarts and reboots.

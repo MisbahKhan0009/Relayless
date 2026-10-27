@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use relayless_core::{
-    AccessRequest, ActivityDto, Core, CoreEvent, CoreOptions, CreatedInvitation, DownloadItem, GrantDto, HistoryDto,
+    AccessRequest, ActivityDto, Core, CoreEvent, CoreOptions, CreatedInvitation, DownloadItem, GrantDto, HistoryDto, OutgoingDto,
     JobSnapshot, JoinResult, ListResult, NetworkStatus, PeerStatus, RemoteDto, Settings, ShareDto,
 };
 use serde::Serialize;
@@ -268,6 +268,16 @@ fn list_history(s: State<AppState>, since_ms: i64) -> CmdResult<Vec<HistoryDto>>
 #[tauri::command]
 fn clear_history(s: State<AppState>) -> CmdResult<()> {
     s.core.clear_history().map_err(err)
+}
+
+#[tauri::command]
+fn list_outgoing(s: State<AppState>) -> Vec<OutgoingDto> {
+    s.core.list_outgoing()
+}
+
+#[tauri::command]
+fn clear_outgoing(s: State<AppState>) {
+    s.core.clear_outgoing()
 }
 
 /// Opens Explorer with the file selected (or the folder itself).
@@ -580,6 +590,8 @@ pub fn run() {
             list_activity,
             list_history,
             clear_history,
+            list_outgoing,
+            clear_outgoing,
             reveal_path,
             list_local_dir,
             make_dir,

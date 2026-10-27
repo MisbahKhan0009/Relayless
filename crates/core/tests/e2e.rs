@@ -188,6 +188,13 @@ async fn full_transfer_folder_and_security() {
     assert_eq!(big_s.fingerprint, big.fingerprint);
     assert_eq!(big_s.peer_name, "Receiver PC");
 
+    // The sender lists what it sent, with the receiver's progress.
+    let out = sender.list_outgoing();
+    let big_o = out.iter().find(|o| o.name == "big.bin").expect("outgoing entry");
+    assert_eq!(big_o.status, "verified");
+    assert_eq!(big_o.sent_bytes, big_o.size);
+    assert_eq!(big_o.device_name, "Receiver PC");
+
     // Without names, history keeps only type and size; "off" clears it.
     let mut st = receiver.settings();
     st.history_names = false;
@@ -234,6 +241,10 @@ async fn pause_resume_and_crash_recovery() {
 
     // Manual pause and resume.
     wait_progress(&receiver, &id, 16 * 1024 * 1024).await;
+    // Mid-transfer, the sender shows the file with real progress.
+    let o = sender.list_outgoing().into_iter().find(|o| o.name == "movie.mkv").expect("outgoing while sending");
+    assert!(o.sent_bytes >= 8 * 1024 * 1024 && o.sent_bytes < o.size, "sender progress {}", o.sent_bytes);
+    assert_eq!(o.status, "sending");
     receiver.pause_job(&id).await.unwrap();
     let paused = wait_status(&receiver, &id, JobStatus::Paused, 10).await;
     tokio::time::sleep(Duration::from_millis(500)).await;

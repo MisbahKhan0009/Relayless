@@ -36,7 +36,7 @@ Every request opens a new bidirectional QUIC stream. The client writes one lengt
 | `List { share, path, offset, limit }` | One page of a directory (at most 1000 entries) |
 | `Walk { share, path }` | All files below a folder (at most 50,000) |
 | `Stat { share, path }` | Size, modification time, folder flag |
-| `Chunk { share, path, size, mtime_ms, chunk_size, index, from }` | `Chunk { len }`, then the data |
+| `Chunk { share, path, size, mtime_ms, chunk_size, index, from, have? }` | `Chunk { len }`, then the data. `have` is the receiver's own count of bytes it already holds for the file, so the sender can show real progress (including after a resume). Older senders ignore it. |
 | `Receipt { share, path, size, job, fingerprint, started_at, finished_at, active_ms, direct_bytes, relay_bytes, peak_bps, blocks }` | `Ack`. Sent once by the receiver after a file is verified, so the sender can keep a history entry. The sender only records it for a file that exists in the share at that size. Older senders reject the unknown request, which is harmless. |
 
 Chunk data is sent in 1 MiB blocks, each followed by the 32-byte BLAKE3 hash of that block. `from` is a block-aligned offset inside the chunk, used to resume a partly received chunk. The sender re-checks the file's size and modification time after reading every block and resets the stream if the file changed, so a block hash never covers bytes from two versions.
@@ -54,6 +54,10 @@ A download job records the remote file's identity (path, size, modification time
 5. When every chunk is recorded, the whole file is re-read and each chunk is verified again. Bad chunks are dropped and fetched again; otherwise the file is renamed to its final name (with ` (1)` etc. if the name is taken).
 
 Network errors retry with exponential backoff and jitter; a missing sender shows *Waiting for sender*. Jobs survive restarts: on launch, unfinished jobs restart and reconcile with the partial file (a missing or resized partial file resets that job's progress).
+
+## Sending progress
+
+The sender keeps an in-memory entry per (receiver, file): the receiver's last reported `have`, plus the bytes sent since, capped at the file size. An entry shows *sending* while chunks are being served, *waiting* after 15 seconds without requests (the receiver paused or went offline), *delivered* when every byte has been sent, and *verified* once the receiver's `Receipt` arrives. The list lives only in memory and is not written to disk.
 
 ## Receipts and history
 
