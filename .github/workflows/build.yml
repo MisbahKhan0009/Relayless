@@ -208,7 +208,7 @@ jobs:
         run: npm ci
 
       # Keep the same signing key across runs so new builds install over old ones.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.relayless-signing
           key: relayless-signing-key-v1
