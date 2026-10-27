@@ -131,7 +131,7 @@ export default function Settings() {
                 <Button variant="primary" onClick={storage.request}>Allow</Button>
               )}
             </Row>
-            <Row label="Run in the background" hint="Lets transfers continue with the screen off without Android pausing them. A notification shows while files are moving.">
+            <Row label="Run in the background" hint="Lets transfers continue with the screen off. Tap Allow, pick Relayless in the list and choose “Don't optimize” or “Unrestricted”.">
               {battery ? (
                 <span className="pill pill-ok"><BatteryCharging size={12} /> Unrestricted</span>
               ) : (

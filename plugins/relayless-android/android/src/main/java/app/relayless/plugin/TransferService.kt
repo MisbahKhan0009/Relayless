@@ -34,21 +34,8 @@ class TransferService : Service() {
         val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Relayless"
         val text = intent?.getStringExtra(EXTRA_TEXT) ?: "Keeping transfers running"
         val notification = build(this, title, text)
-        val type = when {
-            Build.VERSION.SDK_INT >= 34 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            Build.VERSION.SDK_INT >= 29 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            else -> 0
-        }
-        try {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
-        } catch (e: Exception) {
-            // Some OEM builds refuse the special-use type; fall back to data sync.
-            if (Build.VERSION.SDK_INT >= 29) {
-                ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                throw e
-            }
-        }
+        val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
         acquireLocks()
         running = true
         return START_STICKY

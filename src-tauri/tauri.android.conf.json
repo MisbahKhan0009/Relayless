@@ -1,5 +1,5 @@
 {
-  "identifier": "app.relayless",
+  "identifier": "io.github.misbahkhan0009.relayless",
   "app": {
     "windows": [{ "label": "main", "url": "index.html" }]
   }

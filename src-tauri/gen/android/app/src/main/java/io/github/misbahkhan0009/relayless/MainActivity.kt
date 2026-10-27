@@ -1,4 +1,4 @@
-package app.relayless
+package io.github.misbahkhan0009.relayless
 
 import android.os.Bundle
 import android.view.View

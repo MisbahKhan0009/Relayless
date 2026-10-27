@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks the launched app on the emulator: process alive, engine started, no crash.
 set -u
-pkg=app.relayless
+pkg=io.github.misbahkhan0009.relayless
 pid="$(adb shell pidof "$pkg" 2>/dev/null | tr -d '\r')"
 ps_line="$(adb shell ps -A 2>/dev/null | tr -d '\r' | grep -w "$pkg" | head -1)"
 log="$(adb logcat -d -v brief 2>/dev/null)"

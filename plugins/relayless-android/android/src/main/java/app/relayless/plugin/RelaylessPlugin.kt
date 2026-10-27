@@ -116,13 +116,15 @@ class RelaylessPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun requestIgnoreBatteryOptimizations(invoke: Invoke) {
+        // Opens the battery optimization list (no special permission needed);
+        // the user picks Relayless and chooses "Don't optimize" / "Unrestricted".
         if (!unrestricted()) {
             try {
-                val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (e: ActivityNotFoundException) {
+                val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                 i.data = Uri.parse("package:" + activity.packageName)
                 activity.startActivity(i)
-            } catch (e: ActivityNotFoundException) {
-                activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             }
         }
         invoke.resolve(JSObject().apply { put("unrestricted", unrestricted()) })

@@ -193,7 +193,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.relayless-signing
-          key: relayless-signing-key-v1
+          key: relayless-signing-key-v2
 
       - name: Signing key
         shell: bash
@@ -209,8 +209,9 @@ jobs:
             echo "::notice title=APK signing::Signed with the repository's release key"
           elif [ ! -f "$K/relayless.jks" ]; then
             openssl rand -hex 16 | tr -d '\n' > "$K/pass"
-            keytool -genkeypair -keystore "$K/relayless.jks" -alias relayless -keyalg RSA -keysize 4096 \
-              -validity 10000 -storepass "$(cat "$K/pass")" -keypass "$(cat "$K/pass")" -dname "CN=Relayless" > /dev/null 2>&1
+            keytool -genkeypair -keystore "$K/relayless.jks" -storetype PKCS12 -alias relayless -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass "$(cat "$K/pass")" -keypass "$(cat "$K/pass")" \
+              -dname "CN=Relayless, OU=Relayless, O=Relayless, L=Dhaka, C=BD" > /dev/null 2>&1
             echo "::notice title=APK signing::Created a new signing key; later builds reuse it"
           else
             echo "::notice title=APK signing::Reusing the cached signing key"
@@ -258,7 +259,7 @@ jobs:
           script: |
             adb install -r ${{ steps.apk.outputs.apk }}
             adb logcat -c
-            adb shell monkey -p app.relayless -c android.intent.category.LAUNCHER 1
+            adb shell monkey -p io.github.misbahkhan0009.relayless -c android.intent.category.LAUNCHER 1
             sleep 45
             bash .github/scripts/android-smoke.sh
 
