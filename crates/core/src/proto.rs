@@ -1,14 +1,18 @@
 //! Wire protocol. Every request opens a fresh bidirectional QUIC stream:
 //! the client writes one length-prefixed JSON request and finishes its side,
 //! the server answers with one or more length-prefixed JSON frames. A chunk
-//! response is followed by the raw chunk bytes and a 32-byte BLAKE3 trailer.
+//! response is followed by the chunk's bytes in 1 MiB blocks, each block
+//! followed by its 32-byte BLAKE3 hash, so the receiver can verify and save
+//! progress block by block and resume a chunk part-way through.
 
 use anyhow::{bail, Context, Result};
 use iroh::endpoint::{RecvStream, SendStream};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 pub const ALPN: &[u8] = b"relayless/1";
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
+/// Unit of verification and resumable progress inside a chunk.
+pub const BLOCK: u64 = 1024 * 1024;
 /// Largest JSON frame we accept (directory listings are paginated well below this).
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 /// Largest chunk a peer may request.
@@ -47,6 +51,9 @@ pub enum Request {
         mtime_ms: i64,
         chunk_size: u64,
         index: u64,
+        /// Byte offset inside the chunk to start from (a multiple of BLOCK).
+        #[serde(default)]
+        from: u64,
     },
 }
 
@@ -149,6 +156,16 @@ pub async fn read_frame<T: DeserializeOwned>(recv: &mut RecvStream) -> Result<T>
     let mut buf = vec![0u8; len];
     recv.read_exact(&mut buf).await.context("reading frame body")?;
     Ok(serde_json::from_slice(&buf).context("decoding frame")?)
+}
+
+/// Hash recorded for a finished chunk: BLAKE3 over its block hashes.
+pub fn chunk_hash_from_blocks(blocks: &[[u8; 32]]) -> [u8; 32] {
+    let mut h = blake3::Hasher::new();
+    h.update(b"relayless-chunk-v2");
+    for b in blocks {
+        h.update(b);
+    }
+    *h.finalize().as_bytes()
 }
 
 /// Validates path components received from the network: no traversal,

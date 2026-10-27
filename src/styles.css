@@ -1560,3 +1560,255 @@ html {
 .picker-item .dir {
   color: var(--accent);
 }
+
+/* ------------------------------------------------------------------ phone polish */
+
+.sheet-handle {
+  display: none;
+}
+.segmented.sm button {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.dest-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  font-size: 13.5px;
+  min-width: 0;
+}
+.dest-box .dir {
+  color: var(--accent);
+  flex: none;
+  margin-top: 1px;
+}
+
+@media (max-width: 760px) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+  body {
+    font-size: 15px;
+  }
+  .btn-md {
+    height: 42px;
+    padding: 0 16px;
+  }
+  .btn-sm {
+    height: 36px;
+    padding: 0 12px;
+  }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .input {
+    height: 44px;
+    font-size: 16px;
+  }
+  .topbar-connect {
+    width: 42px;
+    padding: 0;
+  }
+  .topbar-connect > span {
+    display: none;
+  }
+
+  /* Dialogs become bottom sheets */
+  .modal-backdrop {
+    padding: 0;
+    place-items: end stretch;
+  }
+  .modal {
+    max-width: none !important;
+    width: 100%;
+    max-height: 88dvh;
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    animation: sheet 0.2s ease;
+  }
+  .sheet-handle {
+    display: block;
+    width: 38px;
+    height: 4px;
+    border-radius: 4px;
+    background: var(--border-strong);
+    margin: 8px auto 0;
+  }
+  .modal-head {
+    padding: 8px 12px 4px 18px;
+  }
+  .modal-body {
+    padding: 8px 18px 16px;
+  }
+  .modal-foot {
+    padding: 12px 18px 16px;
+    gap: 10px;
+  }
+  .modal-foot > .btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .modal-foot > .btn-ghost {
+    flex: 0 0 auto;
+  }
+
+  /* Remote browser */
+  .m-browse-head {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .m-browse-head .search {
+    width: 100%;
+    height: 42px;
+  }
+  .m-thead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .table {
+    border-radius: 14px;
+  }
+  .tbody {
+    height: calc(100dvh - 330px);
+    min-height: 260px;
+  }
+  .mrow {
+    position: absolute;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .mrow:active {
+    background: var(--hover);
+  }
+  .mrow.sel {
+    background: rgba(45, 212, 191, 0.08);
+  }
+  .mrow-ico {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: var(--surface-3);
+    color: var(--text-2);
+    flex: none;
+  }
+  .mrow-ico.dir {
+    background: var(--accent-soft);
+  }
+  .mrow-ico.dir svg {
+    color: var(--accent);
+  }
+  .mrow-name {
+    font-weight: 550;
+    line-height: 1.3;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+  }
+  .mcheck {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    background: transparent;
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: var(--accent-ink);
+    padding: 0;
+  }
+  .mcheck.on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .m-selbar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 74px;
+    z-index: 30;
+    padding: 10px 10px 10px 16px;
+    border-radius: 16px;
+  }
+
+  /* Transfers: wrap long names, roomier actions */
+  .job {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+  }
+  .job-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.3;
+  }
+  .job-meta {
+    gap: 6px 10px;
+  }
+  .job-actions {
+    gap: 0;
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab {
+    white-space: nowrap;
+    flex: none;
+  }
+  .toasts {
+    bottom: 140px;
+  }
+}
+
+@keyframes sheet {
+  from {
+    transform: translateY(40px);
+    opacity: 0.4;
+  }
+}
+
+@media (max-width: 760px) {
+  /* The browser has its own header with back button on phones. */
+  .main.page-browse .topbar {
+    display: none;
+  }
+  .m-selbar .grow {
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

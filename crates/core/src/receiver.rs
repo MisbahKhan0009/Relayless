@@ -3,15 +3,16 @@
 //!
 //! Each file is split into fixed-size chunks. Several chunks are fetched in
 //! parallel on independent QUIC streams to fill long, high-latency links.
-//! Bytes are streamed straight to their offset in a `.rlpart` file in 1 MiB
-//! blocks (memory stays bounded), hashed on the fly and checked against the
-//! sender's per-chunk BLAKE3 trailer. A committer flushes the file to disk
-//! and only then records the chunk as verified in SQLite, so after a crash,
-//! power loss or reboot the engine resumes exactly from durable progress.
+//! Each chunk arrives in 1 MiB blocks, each followed by the sender's BLAKE3
+//! hash of that block. A block is checked, written to its offset in a
+//! `.rlpart` file and reported to a committer, which flushes the file to
+//! disk and only then records the progress in SQLite (whole chunks, and the
+//! verified prefix of unfinished chunks). After a pause, crash, power loss
+//! or reboot, every chunk resumes from its last saved block.
 //! When every chunk is present the whole file is re-read and re-verified
 //! before it is renamed to its final name.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::PathBuf;
@@ -36,7 +37,7 @@ use crate::util::{
     write_all_at,
 };
 
-const BLOCK: usize = 1024 * 1024;
+const BLOCK: usize = crate::proto::BLOCK as usize;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const COMMIT_INTERVAL: Duration = Duration::from_secs(2);
@@ -704,24 +705,37 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
         .verified_chunks(&row.id)
         .map_err(|e| JobError::Fatal(e.to_string()))?
         .into_iter()
-        .map(|(i, _)| i)
+        .map(|(i, _, _)| i)
         .collect();
-    let verified_bytes: u64 = verified.iter().map(|&i| chunk_len(&row, i)).sum();
+    let saved: Vec<crate::db::Partial> = inner
+        .db
+        .partials(&row.id)
+        .map_err(|e| JobError::Fatal(e.to_string()))?
+        .into_iter()
+        .filter(|(i, d, hs)| !verified.contains(i) && *i < row.total_chunks && *d < chunk_len(&row, *i) && hs.len() as u64 == d.div_ceil(BLOCK as u64))
+        .collect();
+    let verified_bytes: u64 = verified.iter().map(|&i| chunk_len(&row, i)).sum::<u64>() + saved.iter().map(|(_, d, _)| *d).sum::<u64>();
     h.verified.store(verified_bytes, Ordering::Relaxed);
     h.verified_chunks.store(verified.len() as u64, Ordering::Relaxed);
     h.inflight.store(0, Ordering::Relaxed);
-    let missing: VecDeque<u64> = (0..row.total_chunks).filter(|i| !verified.contains(i)).collect();
+    // Finish part-done chunks first, then the rest in order.
+    let mut missing: VecDeque<u64> = saved.iter().map(|(i, _, _)| *i).collect();
+    missing.extend((0..row.total_chunks).filter(|i| !verified.contains(i) && !saved.iter().any(|(p, _, _)| p == i)));
     if missing.is_empty() {
         return Ok(());
     }
     set_status(inner, h, JobStatus::Downloading, None);
 
+    let committed: HashMap<u64, u64> = saved.iter().map(|(i, d, _)| (*i, *d)).collect();
+    let partials: Arc<Mutex<HashMap<u64, (u64, Vec<[u8; 32]>)>>> =
+        Arc::new(Mutex::new(saved.into_iter().map(|(i, d, hs)| (i, (d, hs))).collect()));
+
     let settings = inner.settings();
     let workers = (settings.parallel_streams as usize).min(missing.len()).max(1);
     let queue = Arc::new(Mutex::new(missing));
     let pass_cancel = h.cancel.child_token();
-    let (done_tx, done_rx) = mpsc::unbounded_channel::<(u64, [u8; 32])>();
-    let committer = tokio::spawn(commit_loop(inner.clone(), h.clone(), file.clone(), done_rx));
+    let (done_tx, done_rx) = mpsc::unbounded_channel::<Progress>();
+    let committer = tokio::spawn(commit_loop(inner.clone(), h.clone(), file.clone(), done_rx, committed));
     let pc = peer_conn(inner, peer);
 
     let mut set = tokio::task::JoinSet::new();
@@ -735,6 +749,7 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
         let done_tx = done_tx.clone();
         let row = row.clone();
         let pc = pc.clone();
+        let partials = partials.clone();
         set.spawn(async move {
             let mut corrupt_retries = 0u32;
             loop {
@@ -742,13 +757,11 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
                     return Err(JobError::Stopped);
                 }
                 let Some(idx) = queue.lock().pop_front() else { return Ok(()) };
-                match fetch_chunk(&inner, &h, &conn, &file, &row, idx, &cancel, &pc).await {
-                    Ok(hash) => {
-                        let _ = done_tx.send((idx, hash));
-                    }
+                match fetch_chunk(&inner, &conn, &file, &row, idx, &cancel, &pc, &partials, &done_tx, &h).await {
+                    Ok(()) => {}
                     Err(ChunkError::Corrupt) if corrupt_retries < 5 => {
                         corrupt_retries += 1;
-                        inner.log("warning", &format!("Chunk {idx} of {} failed verification; fetching it again", row.display_name), Some(&row.id));
+                        inner.log("warning", &format!("A block of {} failed verification; fetching it again", row.display_name), Some(&row.id));
                         queue.lock().push_back(idx);
                     }
                     Err(e) => {
@@ -777,6 +790,7 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
             }
         }
     }
+    // The committer saves everything received so far, including on pause.
     let commit_res = committer.await.unwrap_or_else(|e| Err(JobError::Fatal(e.to_string())));
     if let Err(e) = commit_res {
         return Err(e);
@@ -809,23 +823,33 @@ impl From<JobError> for ChunkError {
     }
 }
 
+/// Progress reported by download workers to the committer.
+enum Progress {
+    /// Verified prefix of a chunk (bytes done, hashes of the blocks so far).
+    Partial { idx: u64, done: u64, hashes: Vec<[u8; 32]> },
+    /// A complete chunk and its recorded hash.
+    Done { idx: u64, hash: [u8; 32] },
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn fetch_chunk(
     inner: &Arc<Inner>,
-    h: &JobHandle,
     conn: &Connection,
     file: &Arc<File>,
     row: &JobRow,
     idx: u64,
     cancel: &CancellationToken,
     pc: &PeerConn,
-) -> Result<[u8; 32], ChunkError> {
+    partials: &Mutex<HashMap<u64, (u64, Vec<[u8; 32]>)>>,
+    tx: &mpsc::UnboundedSender<Progress>,
+    h: &JobHandle,
+) -> Result<(), ChunkError> {
     let direct_only = inner.settings.read().direct_only();
     if direct_only && !pc.route.borrow().is_direct() {
         return Err(JobError::RelayBlocked.into());
     }
-    let offset = idx * row.chunk_size;
     let len = chunk_len(row, idx);
+    let (mut done, mut hashes) = partials.lock().get(&idx).cloned().unwrap_or((0, Vec::new()));
     let (mut send, mut recv) = conn.open_bi().await.map_err(net)?;
     write_frame(
         &mut send,
@@ -836,6 +860,7 @@ async fn fetch_chunk(
             mtime_ms: row.mtime_ms,
             chunk_size: row.chunk_size,
             index: idx,
+            from: done,
         },
     )
     .await
@@ -848,115 +873,115 @@ async fn fetch_chunk(
         _ = cancel.cancelled() => return Err(JobError::Stopped.into()),
     };
     match resp {
-        Response::Chunk { len: l } if l == len => {}
+        Response::Chunk { len: l } if l == len - done => {}
         Response::Error { code, message } => return Err(remote_err(code, message).into()),
         _ => return Err(JobError::Network("Unexpected chunk reply.".into()).into()),
     }
 
+    let base = idx * row.chunk_size;
     let mut buf = vec![0u8; BLOCK];
-    let mut pos = offset;
-    let mut remaining = len;
-    let mut received: u64 = 0;
-    let result: Result<blake3::Hasher, ChunkError> = async {
-        let mut hasher = blake3::Hasher::new();
-        let mut blocks = 0u32;
-        while remaining > 0 {
-            let n = (remaining as usize).min(BLOCK);
-            inner.download_limiter.acquire(n).await;
-            tokio::select! {
-                r = tokio::time::timeout(READ_TIMEOUT, recv.read_exact(&mut buf[..n])) => {
-                    r.map_err(|_| JobError::Network("The transfer stalled.".into()))?.map_err(net)?;
-                }
-                _ = cancel.cancelled() => {
-                    let _ = recv.stop(VarInt::from_u32(0));
-                    return Err(JobError::Stopped.into());
-                }
+    let mut want = [0u8; 32];
+    let mut blocks = 0u32;
+    while done < len {
+        let n = ((len - done) as usize).min(BLOCK);
+        inner.download_limiter.acquire(n).await;
+        tokio::select! {
+            r = tokio::time::timeout(READ_TIMEOUT, async {
+                recv.read_exact(&mut buf[..n]).await?;
+                recv.read_exact(&mut want).await
+            }) => {
+                r.map_err(|_| JobError::Network("The transfer stalled.".into()))?.map_err(net)?;
             }
-            let f = file.clone();
-            let (b, hs, r) = tokio::task::spawn_blocking(move || {
-                let b = buf;
-                let mut hs = hasher;
-                let r = write_all_at(&f, &b[..n], pos);
-                if r.is_ok() {
-                    hs.update(&b[..n]);
-                }
-                (b, hs, r)
-            })
-            .await
-            .map_err(|e| JobError::Fatal(e.to_string()))?;
-            buf = b;
-            hasher = hs;
-            r.map_err(|e| disk_err(e, "writing data"))?;
-            h.inflight.fetch_add(n as u64, Ordering::Relaxed);
-            received += n as u64;
-            pos += n as u64;
-            remaining -= n as u64;
-            blocks += 1;
-            if direct_only && blocks % 8 == 0 && !pc.route.borrow().is_direct() {
+            _ = cancel.cancelled() => {
                 let _ = recv.stop(VarInt::from_u32(0));
-                return Err(JobError::RelayBlocked.into());
+                return Err(JobError::Stopped.into());
             }
         }
-        Ok(hasher)
-    }
-    .await;
-    let hasher = match result {
-        Ok(hs) => hs,
-        Err(e) => {
-            h.inflight.fetch_sub(received, Ordering::Relaxed);
-            return Err(e);
+        // Verify, then write; nothing unverified ever counts as progress.
+        let f = file.clone();
+        let pos = base + done;
+        let (b, r) = tokio::task::spawn_blocking(move || {
+            let b = buf;
+            let got = *blake3::hash(&b[..n]).as_bytes();
+            let r = if got != want { Ok(false) } else { write_all_at(&f, &b[..n], pos).map(|_| true) };
+            (b, r)
+        })
+        .await
+        .map_err(|e| JobError::Fatal(e.to_string()))?;
+        buf = b;
+        if !r.map_err(|e| disk_err(e, "writing data"))? {
+            let _ = recv.stop(VarInt::from_u32(0));
+            return Err(ChunkError::Corrupt);
         }
-    };
-    let mut trailer = [0u8; 32];
-    let tr = tokio::time::timeout(READ_TIMEOUT, recv.read_exact(&mut trailer)).await;
-    if !matches!(tr, Ok(Ok(()))) {
-        h.inflight.fetch_sub(received, Ordering::Relaxed);
-        return Err(JobError::Network("The chunk was cut off.".into()).into());
+        done += n as u64;
+        hashes.push(want);
+        h.inflight.fetch_add(n as u64, Ordering::Relaxed);
+        partials.lock().insert(idx, (done, hashes.clone()));
+        let _ = tx.send(Progress::Partial { idx, done, hashes: hashes.clone() });
+        blocks += 1;
+        if direct_only && blocks % 8 == 0 && !pc.route.borrow().is_direct() {
+            let _ = recv.stop(VarInt::from_u32(0));
+            return Err(JobError::RelayBlocked.into());
+        }
     }
-    let hash = *hasher.finalize().as_bytes();
-    if hash != trailer {
-        h.inflight.fetch_sub(received, Ordering::Relaxed);
-        return Err(ChunkError::Corrupt);
-    }
-    Ok(hash)
+    partials.lock().remove(&idx);
+    let _ = tx.send(Progress::Done { idx, hash: chunk_hash_from_blocks(&hashes) });
+    Ok(())
 }
 
-/// Batches verified chunks: flush file data to disk, then record them.
+/// Saves progress: flush the file to disk, then record finished chunks and
+/// the verified prefix of unfinished ones. Runs until all workers stop, so a
+/// pause or disconnect always saves what was received.
 async fn commit_loop(
     inner: Arc<Inner>,
     h: Arc<JobHandle>,
     file: Arc<File>,
-    mut rx: mpsc::UnboundedReceiver<(u64, [u8; 32])>,
+    mut rx: mpsc::UnboundedReceiver<Progress>,
+    mut committed: HashMap<u64, u64>,
 ) -> Result<(), JobError> {
     let row = h.row.lock().clone();
-    let mut pending: Vec<(u64, [u8; 32])> = Vec::new();
+    let mut parts: HashMap<u64, (u64, Vec<[u8; 32]>)> = HashMap::new();
+    let mut dones: Vec<(u64, [u8; 32])> = Vec::new();
     let mut last = Instant::now();
     let mut open = true;
     while open {
         tokio::select! {
             m = rx.recv() => match m {
-                Some(x) => pending.push(x),
+                Some(Progress::Partial { idx, done, hashes }) => { parts.insert(idx, (done, hashes)); }
+                Some(Progress::Done { idx, hash }) => { parts.remove(&idx); dones.push((idx, hash)); }
                 None => open = false,
             },
             _ = tokio::time::sleep(Duration::from_millis(500)) => {}
         }
-        let pending_bytes: u64 = pending.iter().map(|(i, _)| chunk_len(&row, *i)).sum();
-        if !pending.is_empty() && (!open || last.elapsed() >= COMMIT_INTERVAL || pending_bytes >= 256 * 1024 * 1024) {
+        if dones.is_empty() && parts.is_empty() {
+            continue;
+        }
+        let base = |i: &u64| committed.get(i).copied().unwrap_or(0);
+        let delta: u64 = dones.iter().map(|(i, _)| chunk_len(&row, *i).saturating_sub(base(i))).sum::<u64>()
+            + parts.iter().map(|(i, (d, _))| d.saturating_sub(base(i))).sum::<u64>();
+        if !open || last.elapsed() >= COMMIT_INTERVAL || delta >= 256 * 1024 * 1024 {
             let f = file.clone();
             tokio::task::spawn_blocking(move || f.sync_data())
                 .await
                 .map_err(|e| JobError::Fatal(e.to_string()))?
                 .map_err(|e| disk_err(e, "saving data to disk"))?;
-            let new_verified = h.verified.load(Ordering::Relaxed) + pending_bytes;
+            let new_verified = h.verified.load(Ordering::Relaxed) + delta;
+            let plist: Vec<crate::db::Partial> = parts.drain().map(|(i, (d, hs))| (i, d, hs)).collect();
             inner
                 .db
-                .commit_chunks(&row.id, &pending, new_verified)
+                .commit_progress(&row.id, &dones, &plist, new_verified)
                 .map_err(|e| JobError::Fatal(format!("database error: {e}")))?;
+            for (i, _) in &dones {
+                committed.remove(i);
+            }
+            for (i, d, _) in &plist {
+                committed.insert(*i, *d);
+            }
             h.verified.store(new_verified, Ordering::Relaxed);
-            h.inflight.fetch_sub(pending_bytes.min(h.inflight.load(Ordering::Relaxed)), Ordering::Relaxed);
-            h.verified_chunks.fetch_add(pending.len() as u64, Ordering::Relaxed);
+            let _ = h.inflight.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v.saturating_sub(delta)));
+            h.verified_chunks.fetch_add(dones.len() as u64, Ordering::Relaxed);
             h.row.lock().verified_bytes = new_verified;
-            pending.clear();
+            dones.clear();
             last = Instant::now();
         }
     }
@@ -980,21 +1005,31 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
         let mut bad = Vec::new();
         let total = expected.len() as u64;
         let mut last_emit = Instant::now();
-        for (n, (idx, want)) in expected.iter().enumerate() {
+        for (n, (idx, want, scheme)) in expected.iter().enumerate() {
             if cancel.is_cancelled() {
                 return Err(JobError::Stopped);
             }
-            let mut hasher = blake3::Hasher::new();
+            let mut whole = blake3::Hasher::new();
+            let mut blocks: Vec<[u8; 32]> = Vec::new();
             let mut pos = idx * row2.chunk_size;
             let mut remaining = chunk_len(&row2, *idx);
             while remaining > 0 {
                 let k = (remaining as usize).min(BLOCK);
                 read_exact_at(&f, &mut buf[..k], pos).map_err(|e| disk_err(e, "verifying"))?;
-                hasher.update(&buf[..k]);
+                if *scheme == crate::db::SCHEME_BLOCKS {
+                    blocks.push(*blake3::hash(&buf[..k]).as_bytes());
+                } else {
+                    whole.update(&buf[..k]);
+                }
                 pos += k as u64;
                 remaining -= k as u64;
             }
-            if hasher.finalize().as_bytes() != want {
+            let got = if *scheme == crate::db::SCHEME_BLOCKS {
+                chunk_hash_from_blocks(&blocks)
+            } else {
+                *whole.finalize().as_bytes()
+            };
+            if &got != want {
                 bad.push(*idx);
             }
             if last_emit.elapsed() > Duration::from_millis(400) || n as u64 + 1 == total {

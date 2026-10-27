@@ -10,3 +10,5 @@
 **Windows:** run the installer (no administrator rights needed). If SmartScreen warns, click **More info → Run anyway**.
 
 New builds install over the previous one and keep your paired devices and transfer history.
+
+**Update both devices.** This version saves download progress every 1 MB (pause and resume no longer start over), which changed the transfer protocol. A phone and a PC must both run this version or newer to transfer.

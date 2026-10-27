@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Check,
   ChevronRight,
   Download,
   File,
@@ -21,9 +22,25 @@ import {
 import { api, errorText, type RemoteEntry } from "../api";
 import { bytes, dateTime } from "../format";
 import { useStore } from "../store";
-import { Button, Empty, IconButton, Modal } from "../ui";
+import { Button, Empty, IconButton, Modal, usePhone } from "../ui";
+import { isAndroid } from "../platform";
 
-const ROW = 38;
+const ROW_DESK = 38;
+const ROW_PHONE = 66;
+
+/** "/storage/emulated/0/Download/Relayless" -> "Phone storage › Download › Relayless" */
+function friendlyPath(p: string): string {
+  const m = p.match(/^\/storage\/emulated\/0\/?(.*)$/);
+  if (!m) return p;
+  return ["Phone storage", ...m[1].split("/").filter(Boolean)].join(" › ");
+}
+
+function shortDate(ms: number): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+}
 const PAGE = 500;
 
 function fileIcon(e: RemoteEntry) {
@@ -54,6 +71,8 @@ export default function Browser() {
   const [dest, setDest] = useState("");
   const [starting, setStarting] = useState(false);
   const body = useRef<HTMLDivElement>(null);
+  const phone = usePhone();
+  const ROW = phone ? ROW_PHONE : ROW_DESK;
   const reqId = useRef(0);
 
   const load = useCallback(
@@ -167,6 +186,29 @@ export default function Browser() {
 
   return (
     <div className="page" style={{ gap: 14 }}>
+      {phone ? (
+        <div className="m-browse-head">
+          <div className="hstack">
+            <IconButton label="Back" onClick={() => (path.length ? go(path.slice(0, -1)) : setPage("devices"))}>
+              <ArrowLeft size={18} />
+            </IconButton>
+            <div className="stack grow" style={{ gap: 0 }}>
+              <b className="truncate" style={{ fontSize: 16 }}>{path.length ? path[path.length - 1] : browse.shareName}</b>
+              <span className="faint small truncate">
+                {browse.peerName}
+                {path.length > 0 ? ` · ${[browse.shareName, ...path.slice(0, -1)].join(" › ")}` : ""}
+              </span>
+            </div>
+            <IconButton label="Refresh" onClick={() => go(path)}>
+              <RefreshCw size={17} className={loading ? "spin" : ""} />
+            </IconButton>
+          </div>
+          <div className="search">
+            <Search size={15} />
+            <input placeholder="Search this folder" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Search" enterKeyHint="search" />
+          </div>
+        </div>
+      ) : (
       <div className="toolbar">
         <IconButton label="Up one level" disabled={path.length === 0} onClick={() => go(path.slice(0, -1))}>
           <ArrowLeft size={16} />
@@ -191,6 +233,7 @@ export default function Browser() {
           <RefreshCw size={15} className={loading ? "spin" : ""} />
         </IconButton>
       </div>
+      )}
 
       {error ? (
         <div className="notice err">
@@ -200,6 +243,21 @@ export default function Browser() {
         </div>
       ) : (
         <div className="table" role="grid" aria-rowcount={shown.length}>
+          {phone ? (
+            <div className="m-thead">
+              <label className="hstack" style={{ gap: 10 }}>
+                <input type="checkbox" aria-label="Select all" checked={allSel} onChange={() => setSelected(allSel ? new Set() : new Set(shown.map((e) => e.name)))} />
+                <span className="small muted">{total} item{total === 1 ? "" : "s"}</span>
+              </label>
+              <div className="segmented sm" role="radiogroup" aria-label="Sort">
+                {(["name", "size", "modified"] as SortKey[]).map((k) => (
+                  <button key={k} type="button" role="radio" aria-checked={sort.key === k} className={sort.key === k ? "on" : ""} onClick={() => sortBy(k)}>
+                    {k === "name" ? "Name" : k === "size" ? "Size" : "Date"} {sort.key === k ? arrow(k) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
           <div className="thead" role="row">
             <span>
               <input
@@ -214,11 +272,44 @@ export default function Browser() {
             <button onClick={() => sortBy("modified")} style={{ justifySelf: "end" }}>Modified {arrow("modified")}</button>
             <span />
           </div>
+          )}
           <div className="tbody" ref={body} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
             <div style={{ height: shown.length * ROW }} />
             {shown.slice(first, last).map((e, k) => {
               const i = first + k;
               const on = selected.has(e.name);
+              if (phone) {
+                return (
+                  <div
+                    key={e.name}
+                    role="row"
+                    className={`mrow ${on ? "sel" : ""}`}
+                    style={{ top: i * ROW, height: ROW }}
+                    onClick={() => (e.isDir ? go([...path, e.name]) : toggle(e.name))}
+                  >
+                    <span className={`mrow-ico ${e.isDir ? "dir" : ""}`}>{fileIcon(e)}</span>
+                    <span className="stack grow" style={{ gap: 2 }}>
+                      <span className="mrow-name">{e.name}</span>
+                      <span className="faint small">
+                        {e.isDir ? "Folder" : bytes(e.size)}
+                        {e.modifiedMs ? ` · ${shortDate(e.modifiedMs)}` : ""}
+                      </span>
+                    </span>
+                    <button
+                      className={`mcheck ${on ? "on" : ""}`}
+                      role="checkbox"
+                      aria-checked={on}
+                      aria-label={`Select ${e.name}`}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        toggle(e.name);
+                      }}
+                    >
+                      {on && <Check size={15} strokeWidth={3} />}
+                    </button>
+                  </div>
+                );
+              }
               return (
                 <div
                   key={e.name}
@@ -265,13 +356,13 @@ export default function Browser() {
       )}
 
       {sel.length > 0 && (
-        <div className="selection-bar">
+        <div className={`selection-bar ${phone ? "m-selbar" : ""}`}>
           <span className="grow">
             <b>{sel.length}</b> selected{selFiles.length > 0 && <span className="muted"> · {bytes(selBytes)}{sel.length > selFiles.length ? " + folders" : ""}</span>}
           </span>
           <Button variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
           <Button variant="primary" icon={<Download size={15} />} onClick={() => { setDest(settings?.downloadDir ?? ""); setConfirm(true); }}>
-            Download selected
+            {phone ? "Download" : "Download selected"}
           </Button>
         </div>
       )}
@@ -279,7 +370,7 @@ export default function Browser() {
 
       {confirm && (
         <Modal
-          title="Download to this computer"
+          title={isAndroid() ? "Download to this phone" : "Download to this computer"}
           onClose={() => setConfirm(false)}
           footer={
             <>
@@ -296,7 +387,14 @@ export default function Browser() {
           <div className="field">
             <span className="label">Save to</span>
             <div className="hstack">
-              <input className="input mono" value={dest} onChange={(e) => setDest(e.target.value)} />
+              {phone ? (
+                <div className="dest-box grow">
+                  <FolderOpen size={16} className="dir" />
+                  <span className="grow" style={{ overflowWrap: "anywhere" }}>{friendlyPath(dest)}</span>
+                </div>
+              ) : (
+                <input className="input mono" value={dest} onChange={(e) => setDest(e.target.value)} />
+              )}
               <Button
                 onClick={async () => {
                   const p = await pickFolder("Choose where to save", dest || undefined);
@@ -306,7 +404,11 @@ export default function Browser() {
                 Change…
               </Button>
             </div>
-            <span className="hint">Files are written as “.rlpart” while downloading and renamed only after every byte is verified.</span>
+            <span className="hint">
+              {phone
+                ? "You can pause any time; it continues where it stopped."
+                : "Files are written as “.rlpart” while downloading and renamed only after every byte is verified."}
+            </span>
           </div>
         </Modal>
       )}

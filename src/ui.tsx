@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -146,23 +146,30 @@ export function Modal({
   width?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // Runs once per opening. Re-running on every render (e.g. when the phone
+  // keyboard resizes the screen) would steal focus and make the keyboard flicker.
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
-    const first = ref.current?.querySelector<HTMLElement>("input, textarea, select, button.btn-primary");
-    first?.focus();
+    // On touch screens don't pop the keyboard open uninvited.
+    const touch = window.matchMedia("(pointer: coarse)").matches;
+    const first = touch ? null : ref.current?.querySelector<HTMLElement>("input, textarea, select, button.btn-primary");
+    (first ?? ref.current)?.focus({ preventScroll: true });
     return () => {
       window.removeEventListener("keydown", onKey);
-      prev?.focus?.();
+      if (!touch) prev?.focus?.();
     };
-  }, [onClose]);
+  }, []);
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: width }} ref={ref}>
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && closeRef.current()}>
+      <div className="modal" role="dialog" aria-modal="true" tabIndex={-1} style={{ maxWidth: width }} ref={ref}>
+        <div className="sheet-handle" aria-hidden="true" />
         <div className="modal-head">
           <h2>{title}</h2>
-          <IconButton label="Close" onClick={onClose}>
+          <IconButton label="Close" onClick={() => closeRef.current()}>
             <X size={16} />
           </IconButton>
         </div>
@@ -250,4 +257,17 @@ export function SectionHeader({ title, children }: { title: ReactNode; children?
       <div className="section-actions">{children}</div>
     </div>
   );
+}
+
+/** True on phone-sized screens; updates on rotation/resize. */
+export function usePhone(): boolean {
+  const q = "(max-width: 760px)";
+  const [phone, setPhone] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const on = () => setPhone(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return phone;
 }

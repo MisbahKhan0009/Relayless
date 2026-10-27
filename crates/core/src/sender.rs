@@ -23,7 +23,6 @@ use crate::util::{
     now_ms, open_source, random_id, read_exact_at, short_peer, system_time_ms,
 };
 
-const BLOCK: usize = 1024 * 1024;
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 pub async fn accept_loop(inner: Arc<Inner>) {
@@ -129,10 +128,10 @@ async fn handle_stream(
             };
             write_frame(&mut send, &resp).await?;
         }
-        Request::Chunk { share, path, size, mtime_ms, chunk_size, index } => {
+        Request::Chunk { share, path, size, mtime_ms, chunk_size, index, from } => {
             match authorize(inner, peer, &share) {
                 Ok(s) => {
-                    serve_chunk(inner, peer, conn, &mut send, &s, &path, size, mtime_ms, chunk_size, index)
+                    serve_chunk(inner, peer, conn, &mut send, &s, &path, size, mtime_ms, chunk_size, index, from)
                         .await?
                 }
                 Err(r) => write_frame(&mut send, &r).await?,
@@ -439,9 +438,19 @@ async fn serve_chunk(
     mtime_ms: i64,
     chunk_size: u64,
     index: u64,
+    from: u64,
 ) -> Result<()> {
-    if !(64 * 1024..=MAX_CHUNK).contains(&chunk_size) || index.saturating_mul(chunk_size) >= size.max(1) {
+    if !(64 * 1024..=MAX_CHUNK).contains(&chunk_size)
+        || chunk_size % BLOCK != 0
+        || index.saturating_mul(chunk_size) >= size.max(1)
+    {
         write_frame(send, &Response::err(ErrCode::BadRequest, "Invalid chunk request.")).await?;
+        return Ok(());
+    }
+    let offset = index * chunk_size;
+    let len = chunk_size.min(size - offset);
+    if from % BLOCK != 0 || from >= len {
+        write_frame(send, &Response::err(ErrCode::BadRequest, "Invalid resume offset.")).await?;
         return Ok(());
     }
     if inner.settings.read().direct_only() && !route_of(conn).is_direct() {
@@ -474,42 +483,50 @@ async fn serve_chunk(
         }
     };
 
-    let offset = index * chunk_size;
-    let len = chunk_size.min(size - offset);
-    write_frame(send, &Response::Chunk { len }).await?;
+    write_frame(send, &Response::Chunk { len: len - from }).await?;
 
     let display: String = path.last().cloned().unwrap_or_default();
     let stats = inner.upload_stats_for(peer);
     stats.begin(&display);
 
     let result: Result<()> = async {
-        let mut hasher = blake3::Hasher::new();
-        let mut buf = vec![0u8; BLOCK];
-        let mut pos = offset;
-        let mut remaining = len;
+        let mut buf = vec![0u8; BLOCK as usize];
+        let mut pos = offset + from;
+        let mut remaining = len - from;
         let mut blocks = 0u32;
         while remaining > 0 {
-            let n = (remaining as usize).min(BLOCK);
+            let n = (remaining as usize).min(BLOCK as usize);
             inner.upload_limiter.acquire(n).await;
             let f = file.clone();
-            let (b, h, r) = tokio::task::spawn_blocking(move || {
+            // Read the block, hash it, and confirm the file hasn't changed since,
+            // so a block hash never vouches for bytes from two file versions.
+            let (b, r) = tokio::task::spawn_blocking(move || {
                 let mut b = buf;
-                let mut h = hasher;
-                let r = read_exact_at(&f, &mut b[..n], pos);
-                if r.is_ok() {
-                    h.update(&b[..n]);
-                }
-                (b, h, r)
+                let r = read_exact_at(&f, &mut b[..n], pos).map_err(|e| e.to_string()).and_then(|_| {
+                    let unchanged = f
+                        .metadata()
+                        .map(|m| m.len() == size && system_time_ms(m.modified()) == mtime_ms)
+                        .unwrap_or(false);
+                    if unchanged {
+                        Ok(*blake3::hash(&b[..n]).as_bytes())
+                    } else {
+                        Err("source changed".to_string())
+                    }
+                });
+                (b, r)
             })
             .await?;
             buf = b;
-            hasher = h;
-            if let Err(e) = r {
-                warn!("read failed while serving chunk: {e}");
-                send.reset(VarInt::from_u32(2)).ok();
-                anyhow::bail!("read failed");
-            }
+            let hash = match r {
+                Ok(h) => h,
+                Err(e) => {
+                    warn!("stopped serving chunk: {e}");
+                    send.reset(VarInt::from_u32(2)).ok();
+                    anyhow::bail!("{e}");
+                }
+            };
             send.write_all(&buf[..n]).await?;
+            send.write_all(&hash).await?;
             stats.sent.fetch_add(n as u64, Ordering::Relaxed);
             pos += n as u64;
             remaining -= n as u64;
@@ -519,19 +536,6 @@ async fn serve_chunk(
                 anyhow::bail!("route switched to relay");
             }
         }
-        // Detect modifications that happened while this chunk was read.
-        let f = file.clone();
-        let unchanged = tokio::task::spawn_blocking(move || {
-            f.metadata()
-                .map(|m| m.len() == size && system_time_ms(m.modified()) == mtime_ms)
-                .unwrap_or(false)
-        })
-        .await?;
-        if !unchanged {
-            send.reset(VarInt::from_u32(4)).ok();
-            anyhow::bail!("source changed during read");
-        }
-        send.write_all(hasher.finalize().as_bytes()).await?;
         Ok(())
     }
     .await;

@@ -109,7 +109,7 @@ export default function App() {
           </span>
         </div>
       </aside>
-      <main className="main">
+      <main className={`main page-${s.page}`}>
         <header className="topbar">
           <h1>{s.page === "browse" && s.browse ? `${s.browse.shareName}` : TITLES[s.page]}</h1>
           {s.page === "browse" && s.browse && <span className="faint">on {s.browse.peerName}</span>}
@@ -119,7 +119,7 @@ export default function App() {
           ) : (
             <span className="pill pill-warn" title="Relay fallback is allowed">Relay fallback on</span>
           )}
-          <Button variant="primary" icon={<KeyRound size={15} />} onClick={() => s.setConnectOpen(true)}>
+          <Button className="topbar-connect" variant="primary" icon={<KeyRound size={15} />} onClick={() => s.setConnectOpen(true)} aria-label="Connect with code">
             Connect
           </Button>
         </header>

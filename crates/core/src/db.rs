@@ -120,6 +120,34 @@ CREATE TABLE IF NOT EXISTS activity(
   message TEXT NOT NULL, job_id TEXT);
 "#;
 
+/// Chunk-hash schemes: 1 = BLAKE3 of the chunk bytes (v1 protocol),
+/// 2 = BLAKE3 over the chunk's 1 MiB block hashes (v2 protocol).
+pub const SCHEME_BLOCKS: u8 = 2;
+
+const SCHEMA_V2: &str = r#"
+ALTER TABLE chunks ADD COLUMN scheme INTEGER NOT NULL DEFAULT 1;
+CREATE TABLE IF NOT EXISTS partials(
+  job_id TEXT NOT NULL, idx INTEGER NOT NULL, done INTEGER NOT NULL, hashes BLOB NOT NULL,
+  PRIMARY KEY(job_id, idx)) WITHOUT ROWID;
+"#;
+
+/// Verified prefix of a chunk: (chunk index, bytes done, block hashes).
+pub type Partial = (u64, u64, Vec<[u8; 32]>);
+
+fn pack_hashes(h: &[[u8; 32]]) -> Vec<u8> {
+    h.iter().flat_map(|x| x.iter().copied()).collect()
+}
+
+fn unpack_hashes(b: &[u8]) -> Vec<[u8; 32]> {
+    b.chunks_exact(32)
+        .map(|c| {
+            let mut a = [0u8; 32];
+            a.copy_from_slice(c);
+            a
+        })
+        .collect()
+}
+
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -130,6 +158,10 @@ impl Db {
         if version < 1 {
             conn.execute_batch(SCHEMA_V1)?;
             conn.pragma_update(None, "user_version", 1)?;
+        }
+        if version < 2 {
+            conn.execute_batch(SCHEMA_V2)?;
+            conn.pragma_update(None, "user_version", 2)?;
         }
         Ok(Db { conn: Mutex::new(conn) })
     }
@@ -512,6 +544,7 @@ impl Db {
             params![id, size as i64, mtime_ms, total_chunks as i64, now_ms()],
         )?;
         tx.execute("DELETE FROM chunks WHERE job_id=?1", params![id])?;
+        tx.execute("DELETE FROM partials WHERE job_id=?1", params![id])?;
         tx.commit()?;
         Ok(())
     }
@@ -521,38 +554,71 @@ impl Db {
         let tx = c.transaction()?;
         tx.execute("DELETE FROM jobs WHERE id=?1", params![id])?;
         tx.execute("DELETE FROM chunks WHERE job_id=?1", params![id])?;
+        tx.execute("DELETE FROM partials WHERE job_id=?1", params![id])?;
         tx.commit()?;
         Ok(())
     }
 
-    pub fn verified_chunks(&self, job_id: &str) -> Result<Vec<(u64, [u8; 32])>> {
+    /// Finished chunks: (index, hash, scheme).
+    pub fn verified_chunks(&self, job_id: &str) -> Result<Vec<(u64, [u8; 32], u8)>> {
         let c = self.conn.lock();
-        let mut st = c.prepare("SELECT idx,hash FROM chunks WHERE job_id=?1 ORDER BY idx")?;
+        let mut st = c.prepare("SELECT idx,hash,scheme FROM chunks WHERE job_id=?1 ORDER BY idx")?;
         let rows = st
             .query_map(params![job_id], |r| {
                 let idx: i64 = r.get(0)?;
                 let h: Vec<u8> = r.get(1)?;
+                let scheme: i64 = r.get(2)?;
                 let mut hash = [0u8; 32];
                 if h.len() == 32 {
                     hash.copy_from_slice(&h);
                 }
-                Ok((idx as u64, hash))
+                Ok((idx as u64, hash, scheme as u8))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Atomically records verified chunks and the new verified byte count.
-    pub fn commit_chunks(&self, job_id: &str, chunks: &[(u64, [u8; 32])], verified_bytes: u64) -> Result<()> {
+    pub fn partials(&self, job_id: &str) -> Result<Vec<Partial>> {
+        let c = self.conn.lock();
+        let mut st = c.prepare("SELECT idx,done,hashes FROM partials WHERE job_id=?1 ORDER BY idx")?;
+        let rows = st
+            .query_map(params![job_id], |r| {
+                let idx: i64 = r.get(0)?;
+                let done: i64 = r.get(1)?;
+                let b: Vec<u8> = r.get(2)?;
+                Ok((idx as u64, done as u64, unpack_hashes(&b)))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Atomically records finished chunks, part-finished chunks and the new
+    /// verified byte count. Call only after the file data has been flushed.
+    pub fn commit_progress(
+        &self,
+        job_id: &str,
+        done: &[(u64, [u8; 32])],
+        partials: &[Partial],
+        verified_bytes: u64,
+    ) -> Result<()> {
         let mut c = self.conn.lock();
         let tx = c.transaction()?;
         {
-            let mut st = tx.prepare(
-                "INSERT INTO chunks(job_id,idx,hash) VALUES(?1,?2,?3)
-                 ON CONFLICT(job_id,idx) DO UPDATE SET hash=excluded.hash",
+            let mut ins = tx.prepare(
+                "INSERT INTO chunks(job_id,idx,hash,scheme) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(job_id,idx) DO UPDATE SET hash=excluded.hash, scheme=excluded.scheme",
             )?;
-            for (idx, hash) in chunks {
-                st.execute(params![job_id, *idx as i64, &hash[..]])?;
+            let mut del = tx.prepare("DELETE FROM partials WHERE job_id=?1 AND idx=?2")?;
+            for (idx, hash) in done {
+                ins.execute(params![job_id, *idx as i64, &hash[..], SCHEME_BLOCKS as i64])?;
+                del.execute(params![job_id, *idx as i64])?;
+            }
+            let mut up = tx.prepare(
+                "INSERT INTO partials(job_id,idx,done,hashes) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(job_id,idx) DO UPDATE SET done=excluded.done, hashes=excluded.hashes",
+            )?;
+            for (idx, d, hashes) in partials {
+                up.execute(params![job_id, *idx as i64, *d as i64, pack_hashes(hashes)])?;
             }
         }
         tx.execute(
@@ -567,10 +633,8 @@ impl Db {
         let mut c = self.conn.lock();
         let tx = c.transaction()?;
         for idx in idxs {
-            tx.execute(
-                "DELETE FROM chunks WHERE job_id=?1 AND idx=?2",
-                params![job_id, *idx as i64],
-            )?;
+            tx.execute("DELETE FROM chunks WHERE job_id=?1 AND idx=?2", params![job_id, *idx as i64])?;
+            tx.execute("DELETE FROM partials WHERE job_id=?1 AND idx=?2", params![job_id, *idx as i64])?;
         }
         tx.execute(
             "UPDATE jobs SET verified_bytes=?2 WHERE id=?1",
@@ -580,14 +644,12 @@ impl Db {
         Ok(())
     }
 
+    /// Forgets all progress for a job.
     pub fn clear_chunks(&self, job_id: &str) -> Result<()> {
-        self.remove_all_chunks(job_id)
-    }
-
-    fn remove_all_chunks(&self, job_id: &str) -> Result<()> {
         let mut c = self.conn.lock();
         let tx = c.transaction()?;
         tx.execute("DELETE FROM chunks WHERE job_id=?1", params![job_id])?;
+        tx.execute("DELETE FROM partials WHERE job_id=?1", params![job_id])?;
         tx.execute("UPDATE jobs SET verified_bytes=0 WHERE id=?1", params![job_id])?;
         tx.commit()?;
         Ok(())

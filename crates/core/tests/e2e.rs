@@ -367,3 +367,54 @@ async fn big_transfer_memory() {
     }
     assert_eq!(hash(Path::new(&done.dest_path)), hash(&shared.join("big.iso")));
 }
+
+/// Pausing before any chunk has finished must keep the verified blocks
+/// (the case of a slow phone link with many large chunks in flight).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pause_mid_chunk_keeps_progress() {
+    let _ = tracing_subscriber::fmt().with_env_filter(std::env::var("TLOG").unwrap_or("relayless_core=info".into())).try_init();
+    let tmp = tempfile::tempdir().unwrap();
+    let shared = tmp.path().join("shared");
+    let size = 100 * 1024 * 1024 + 4321;
+    make_file(&shared.join("episode.mkv"), size, 21);
+
+    let sender = Core::start(opts(&tmp.path().join("s"), "Sender")).await.unwrap();
+    let rdir = tmp.path().join("r");
+    let receiver = Core::start(opts(&rdir, "Phone")).await.unwrap();
+    auto_approve(&sender);
+    let share = sender.create_share(shared.to_str().unwrap(), None).unwrap();
+    let peer = pair(&sender, &receiver, &share).await;
+    let mut s = receiver.settings();
+    s.chunk_size_mib = 32;
+    s.parallel_streams = 12;
+    s.download_limit_kbps = 4 * 1024; // 4 MB/s spread over 12 streams: no 32 MB chunk can finish quickly
+    receiver.update_settings(s).unwrap();
+
+    let id = receiver
+        .start_download(&peer, &share.id, vec![DownloadItem { path: vec!["episode.mkv".into()], is_dir: false }], None)
+        .await
+        .unwrap()[0]
+        .clone();
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    receiver.pause_job(&id).await.unwrap();
+    let paused = wait_status(&receiver, &id, JobStatus::Paused, 10).await;
+    println!("paused with {} bytes verified, {} whole chunks", paused.verified_bytes, paused.verified_chunks);
+    assert_eq!(paused.verified_chunks, 0, "test setup: no chunk should have completed yet");
+    assert!(paused.verified_bytes >= 8 * 1024 * 1024, "partial chunk progress was lost: {}", paused.verified_bytes);
+
+    // Restart the app too: progress must come back from disk.
+    receiver.shutdown().await;
+    drop(receiver);
+    let receiver = Core::start(opts(&rdir, "Phone")).await.unwrap();
+    receiver.add_peer_addr(sender.endpoint_addr());
+    let j = receiver.list_jobs().unwrap().into_iter().find(|j| j.id == id).unwrap();
+    assert_eq!(j.verified_bytes, paused.verified_bytes, "progress survived a restart");
+    let mut s = receiver.settings();
+    s.download_limit_kbps = 0;
+    receiver.update_settings(s).unwrap();
+    receiver.resume_job(&id).await.unwrap();
+    let done = wait_status(&receiver, &id, JobStatus::Completed, 120).await;
+    assert_eq!(hash(Path::new(&done.dest_path)), hash(&shared.join("episode.mkv")));
+    receiver.shutdown().await;
+    sender.shutdown().await;
+}
