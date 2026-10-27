@@ -18,7 +18,7 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 
 ### Changed
 - The receiver now sends the sender a short receipt after a file is verified, so both keep a history entry. Older versions ignore it.
-- **Protocol v2.** Chunks are sent in 1 MiB blocks, each with its own BLAKE3 hash, and can be resumed from a block offset. Both devices need this version.
+- **Protocol v2.** Chunks are sent in 1 MiB blocks, each with its own BLAKE3 hash, and can be resumed from a block offset.
 - Download progress is saved per verified megabyte, so pausing or losing the connection keeps everything already received. Downloads started on earlier versions keep their progress.
 
 ### Fixed

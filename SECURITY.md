@@ -20,7 +20,7 @@ Please give us a reasonable time to release a fix before disclosing publicly.
 
 ## Supported versions
 
-Security fixes go into the latest release. Both devices must run the same protocol version, so please update both.
+Security fixes go into the latest release.
 
 ## Scope
 
