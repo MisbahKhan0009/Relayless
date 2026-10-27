@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use rand::RngCore;
+use rand::Rng;
 
 pub fn now_ms() -> i64 {
     SystemTime::now()

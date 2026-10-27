@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { BatteryCharging, Bell, Copy, FolderLock, Info } from "lucide-react";
-import { android, errorText, type Settings as S } from "../api";
+import { BatteryCharging, Bell, Copy, FolderLock, Info, Lock } from "lucide-react";
+import { android, api, errorText, type Settings as S } from "../api";
 import { isAndroid, pickFolder } from "../platform";
 import { useStorageAccess } from "../android";
 import { mbit } from "../format";
 import { useStore } from "../store";
-import { Button, Segmented, Toggle } from "../ui";
+import { Button, Modal, Segmented, Toggle } from "../ui";
 
 function Row({ label, hint, children }: { label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -42,7 +42,8 @@ function LimitInput({ value, onChange }: { value: number; onChange: (v: number) 
 }
 
 export default function Settings() {
-  const { settings, saveSettings, toast, network, version, dataDir } = useStore();
+  const { settings, saveSettings, toast, network, version, dataDir, history } = useStore();
+  const [confirmClear, setConfirmClear] = useState<null | "clear" | "off">(null);
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [restartNote, setRestartNote] = useState(false);
 
@@ -218,6 +219,75 @@ export default function Settings() {
             />
           </Row>
         </div>
+      </section>
+
+      <section>
+        <div className="sub-title">Privacy</div>
+        <div className="panel settings-group">
+          <div className="privacy-facts">
+            <Lock size={16} aria-hidden="true" />
+            <span>
+              Relayless has no account and sends no analytics. Transfer history, receipts and these settings are stored only in this device's
+              database. The coordination service sees that two devices want to connect, never file names or contents.
+            </span>
+          </div>
+          <Row label="Keep history" hint="Finished transfers and their privacy receipts, for the History page. Older entries are deleted automatically.">
+            <Segmented
+              label="History retention"
+              value={settings.historyRetention}
+              onChange={(v) => (v === "off" && history.length > 0 ? setConfirmClear("off") : save({ historyRetention: v }))}
+              options={[
+                { value: "365", label: "1 year" },
+                { value: "90", label: "90 days" },
+                { value: "30", label: "30 days" },
+                { value: "forever", label: "Forever" },
+                { value: "off", label: "Off" },
+              ]}
+            />
+          </Row>
+          <Toggle
+            checked={settings.historyNames}
+            disabled={settings.historyRetention === "off"}
+            label="Keep file names in history"
+            hint="When off, new entries keep only the file type, size, device and receipt."
+            onChange={(v) => save({ historyNames: v })}
+          />
+          <Row label="Clear history" hint={history.length ? `${history.length.toLocaleString()} finished transfer${history.length === 1 ? "" : "s"} on this device.` : "Nothing stored right now."}>
+            <Button variant="danger" disabled={history.length === 0} onClick={() => setConfirmClear("clear")}>Clear history</Button>
+          </Row>
+        </div>
+        {confirmClear && (
+          <Modal
+            title={confirmClear === "off" ? "Turn off history?" : "Clear history?"}
+            onClose={() => setConfirmClear(null)}
+            footer={
+              <>
+                <Button variant="ghost" onClick={() => setConfirmClear(null)}>Keep it</Button>
+                <Button
+                  variant="danger"
+                  onClick={async () => {
+                    const mode = confirmClear;
+                    setConfirmClear(null);
+                    try {
+                      if (mode === "off") await save({ historyRetention: "off" });
+                      else await api.clearHistory();
+                      toast(mode === "off" ? "History is off and was deleted" : "History cleared", "ok");
+                    } catch (e) {
+                      toast(errorText(e), "err");
+                    }
+                  }}
+                >
+                  {confirmClear === "off" ? "Turn off and delete" : "Delete history"}
+                </Button>
+              </>
+            }
+          >
+            <span>
+              This deletes {history.length.toLocaleString()} receipt{history.length === 1 ? "" : "s"} and the calendar from this device. Downloaded files are not touched.
+              {confirmClear === "off" && " New transfers won't be recorded until you turn history back on."}
+            </span>
+          </Modal>
+        )}
       </section>
 
       <section>

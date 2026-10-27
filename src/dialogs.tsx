@@ -17,7 +17,7 @@ import { android, api, errorText, on, type CreatedInvitation, type JoinResult, t
 import { isAndroid } from "./platform";
 import { until } from "./format";
 import { useStore } from "./store";
-import { Button, Modal, Segmented, Toggle } from "./ui";
+import { Button, Modal, SafetyWords, Segmented, Toggle } from "./ui";
 
 function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -169,9 +169,13 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<JoinResult | null>(null);
+  const [words, setWords] = useState<string[] | null>(null);
 
   useEffect(() => {
-    const u = on<{ message: string }>("join-status", (p) => setStatus(p.message));
+    const u = on<{ message: string; safetyWords?: string[] | null }>("join-status", (p) => {
+      setStatus(p.message);
+      if (p.safetyWords?.length) setWords(p.safetyWords);
+    });
     return () => {
       u.then((f) => f());
     };
@@ -200,6 +204,13 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
           <ShieldCheck size={16} />
           <span>This device is now trusted by <b>{result.senderName}</b>. You can come back any time without a new invitation.</span>
         </div>
+        {result.safetyWords?.length > 0 && (
+          <div className="words-block">
+            <span className="label">Safety words</span>
+            <SafetyWords words={result.safetyWords} />
+            <span className="hint">{result.senderName} sees the same five words for this connection. If they differ, someone is in between: forget the device and pair again.</span>
+          </div>
+        )}
         <div className="stack" style={{ gap: 8 }}>
           <span className="label">Shared with you</span>
           {result.shares.map((s) => (
@@ -260,6 +271,13 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
           <span>{status}</span>
         </div>
       )}
+      {busy && words && (
+        <div className="words-block">
+          <span className="label">Safety words</span>
+          <SafetyWords words={words} />
+          <span className="hint">Read these to the sender. They should see the same five words before they approve this device.</span>
+        </div>
+      )}
       {error && (
         <div className="notice err">
           <Wifi size={16} />
@@ -310,6 +328,13 @@ export function AccessRequests() {
       <span>
         used your invitation and wants to browse and download from <b>“{req.shareName}”</b>. Only allow devices you expect.
       </span>
+      {req.safetyWords?.length > 0 && (
+        <div className="words-block">
+          <span className="label">Safety words</span>
+          <SafetyWords words={req.safetyWords} />
+          <span className="hint">Ask them which words their screen shows. Allow only if all five match; different words mean someone else is answering.</span>
+        </div>
+      )}
       {pending.length > 1 && <span className="hint">{pending.length - 1} more request(s) waiting.</span>}
     </Modal>
   );
@@ -332,11 +357,15 @@ export function Onboarding() {
       <div className="onboard-points">
         <div className="onboard-point">
           <span className="i"><Zap size={16} /></span>
-          <span><b>Direct, device to device</b><span className="muted">Files go straight from the sender's device to yours, end-to-end encrypted. Nothing is uploaded to a cloud.</span></span>
+          <span><b>Your files never sit on a server</b><span className="muted">Files go straight from the sender's device to yours, end-to-end encrypted. No account, no upload, no cloud copy.</span></span>
         </div>
         <div className="onboard-point">
           <span className="i"><Waypoints size={16} /></span>
           <span><b>A small coordination service helps you find each other</b><span className="muted">Public iroh relays and DNS exchange connection details so the two PCs can punch through routers. In direct-only mode (the default) no file data ever passes through them.</span></span>
+        </div>
+        <div className="onboard-point">
+          <span className="i"><ShieldCheck size={16} /></span>
+          <span><b>Proof stays with you</b><span className="muted">Every finished transfer gets a privacy receipt: the route it took, how it was verified, and what servers kept (nothing). Your history never leaves this device.</span></span>
         </div>
         <div className="onboard-point">
           <span className="i"><RefreshCw size={16} /></span>

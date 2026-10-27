@@ -6,3 +6,9 @@
 /plugins/*/permissions/schemas
 /plugins/*/android/.tauri
 *.log
+
+# Impeccable design tooling: keep briefs, ignore captures
+.impeccable/review/
+.impeccable/questions/
+.impeccable/mocks/
+.impeccable/build/

@@ -1,0 +1,581 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-27T00:00:00Z",
+  "title": "Design System: Relayless",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Near-Black Ground",
+        "canonical": "oklch(18.2% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "elev": {
+        "role": "neutral",
+        "displayName": "Elevated Ground",
+        "canonical": "oklch(20.9% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ],
+        "note": "Opaque fallback for glass under prefers-reduced-transparency."
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised Ground",
+        "canonical": "oklch(27.7% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Glass 1",
+        "canonical": "rgba(255, 255, 255, 0.045)",
+        "note": "Translucent; always paired with backdrop-filter blur(22px) saturate(150%)."
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Glass 2",
+        "canonical": "rgba(255, 255, 255, 0.065)"
+      },
+      "surface-3": {
+        "role": "neutral",
+        "displayName": "Glass 3",
+        "canonical": "rgba(255, 255, 255, 0.095)"
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "Hover Veil",
+        "canonical": "rgba(255, 255, 255, 0.075)"
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "rgba(255, 255, 255, 0.08)"
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "rgba(255, 255, 255, 0.15)"
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "White",
+        "canonical": "oklch(100% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "text-2": {
+        "role": "neutral",
+        "displayName": "Silver",
+        "canonical": "oklch(76.7% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "text-3": {
+        "role": "neutral",
+        "displayName": "Pewter",
+        "canonical": "oklch(58.6% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Signal Green",
+        "canonical": "oklch(77.0% 0.212 148.7)",
+        "tonalRamp": [
+          "#020f04",
+          "#002f05",
+          "#005016",
+          "#007229",
+          "#00973d",
+          "#10be52",
+          "#4ce676",
+          "#c8ffcf"
+        ]
+      },
+      "accent-strong": {
+        "role": "primary",
+        "displayName": "Bright Signal Green",
+        "canonical": "oklch(81.1% 0.202 150.3)",
+        "tonalRamp": [
+          "#030e06",
+          "#002e0d",
+          "#004e1f",
+          "#067133",
+          "#199549",
+          "#2abc5f",
+          "#43e77b",
+          "#c6ffd1"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Ink on Green",
+        "canonical": "oklch(0% 0 0)"
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Green Wash",
+        "canonical": "rgba(30, 215, 96, 0.14)"
+      },
+      "series-received": {
+        "role": "secondary",
+        "displayName": "Received Green",
+        "canonical": "oklch(65.7% 0.181 148.8)",
+        "tonalRamp": [
+          "#011003",
+          "#003001",
+          "#005014",
+          "#007229",
+          "#00973f",
+          "#3abb5e",
+          "#79de8d",
+          "#d3fbd8"
+        ],
+        "note": "Chart series only; validated with series-sent on the dark surface. Never text."
+      },
+      "series-sent": {
+        "role": "secondary",
+        "displayName": "Sent Violet",
+        "canonical": "oklch(65.4% 0.181 290.3)",
+        "tonalRamp": [
+          "#0b071b",
+          "#261551",
+          "#422f7b",
+          "#5f4aa9",
+          "#7f66d8",
+          "#9f88ff",
+          "#c4b2ff",
+          "#ede8ff"
+        ],
+        "note": "Chart series only; validated with series-received on the dark surface. Never text."
+      },
+      "magnitude-bar": {
+        "role": "neutral",
+        "displayName": "Magnitude White",
+        "canonical": "rgba(255, 255, 255, 0.58)",
+        "note": "Size-only bars (file categories)."
+      },
+      "warn": {
+        "role": "tertiary",
+        "displayName": "Amber",
+        "canonical": "oklch(86.3% 0.133 80.4)",
+        "tonalRamp": [
+          "#0f0a04",
+          "#2f2107",
+          "#503c16",
+          "#745926",
+          "#9a7737",
+          "#c29748",
+          "#efbb5d",
+          "#ffebc2"
+        ]
+      },
+      "warn-soft": {
+        "role": "tertiary",
+        "displayName": "Amber Wash",
+        "canonical": "rgba(255, 200, 100, 0.13)"
+      },
+      "err": {
+        "role": "tertiary",
+        "displayName": "Coral",
+        "canonical": "oklch(67.5% 0.181 17.7)",
+        "tonalRamp": [
+          "#180406",
+          "#480411",
+          "#721b27",
+          "#9e323f",
+          "#cc4b58",
+          "#f86975",
+          "#ff999f",
+          "#ffdedf"
+        ]
+      },
+      "err-soft": {
+        "role": "tertiary",
+        "displayName": "Coral Wash",
+        "canonical": "rgba(241, 94, 108, 0.14)"
+      },
+      "info": {
+        "role": "tertiary",
+        "displayName": "Sky",
+        "canonical": "oklch(76.9% 0.121 252.7)",
+        "tonalRamp": [
+          "#060c13",
+          "#0f253d",
+          "#244163",
+          "#3a608b",
+          "#5180b6",
+          "#6aa2e2",
+          "#8ec8ff",
+          "#d8f1ff"
+        ]
+      },
+      "info-soft": {
+        "role": "tertiary",
+        "displayName": "Sky Wash",
+        "canonical": "rgba(122, 184, 255, 0.13)"
+      },
+      "tooltip-bg": {
+        "role": "neutral",
+        "displayName": "Tooltip Ground",
+        "canonical": "oklch(23.2% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "page-title": {
+        "displayName": "Page title",
+        "purpose": "Topbar title, one per screen; 16px on phone."
+      },
+      "month-title": {
+        "displayName": "Month title",
+        "purpose": "Calendar month name between previous and next."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Headline stat values, tabular; 18px on phone."
+      },
+      "modal-title": {
+        "displayName": "Modal title",
+        "purpose": "Dialog headings."
+      },
+      "card-title": {
+        "displayName": "Card title",
+        "purpose": "Panel headings (live graph, history side blocks)."
+      },
+      "summary": {
+        "displayName": "Summary",
+        "purpose": "The plain sentence summing a period; text-2 with bold values in text; 15px on phone."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default UI text; 15px on phone."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Button labels; 13px small, 15px large."
+      },
+      "small": {
+        "displayName": "Small",
+        "purpose": "Hints, metadata, legend captions."
+      },
+      "section-label": {
+        "displayName": "Section label",
+        "purpose": "Uppercase text-3 label that is the only heading of a list section; 12px variant for table heads and stat keys."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Fingerprints, codes, paths."
+      }
+    },
+    "shadows": [
+      {
+        "name": "glass-edge",
+        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.07)",
+        "purpose": "Top highlight on every resting glass panel and the active nav item."
+      },
+      {
+        "name": "tooltip-lift",
+        "value": "0 12px 32px rgba(0, 0, 0, 0.5)",
+        "purpose": "Live graph tooltip."
+      },
+      {
+        "name": "calendar-tip-lift",
+        "value": "0 14px 36px rgba(0, 0, 0, 0.55)",
+        "purpose": "Calendar day tooltip."
+      },
+      {
+        "name": "floating-layer",
+        "value": "inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 48px rgba(0, 0, 0, 0.45)",
+        "purpose": "Modals and toasts."
+      },
+      {
+        "name": "selected-day-ring",
+        "value": "inset 0 0 0 1.5px #ffffff",
+        "purpose": "Selected calendar day."
+      },
+      {
+        "name": "glass-blur",
+        "value": "blur(22px) saturate(150%)",
+        "purpose": "backdrop-filter for sidebar, topbar and resting panels."
+      },
+      {
+        "name": "modal-blur",
+        "value": "blur(28px) saturate(160%)",
+        "purpose": "backdrop-filter for modals (toast and selection bar use 24px)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "dot-in",
+        "value": "320ms cubic-bezier(0.16, 1, 0.3, 1), stagger 9ms per cell",
+        "purpose": "The one choreographed moment: calendar dots scale in from 0.2 with a fade on month or filter change. Off, including the stagger, under reduced motion."
+      },
+      {
+        "name": "dot-hover",
+        "value": "transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), scale 1.08",
+        "purpose": "Active calendar day hover."
+      },
+      {
+        "name": "control",
+        "value": "120ms",
+        "purpose": "Button background, border, colour and scale (hover 1.03 primary, press 0.97)."
+      },
+      {
+        "name": "hover",
+        "value": "150ms",
+        "purpose": "Panel, tile and day-cell hover backgrounds; switch."
+      },
+      {
+        "name": "rise",
+        "value": "160ms ease",
+        "purpose": "Modal and toast entrance; phone sheet 200ms ease."
+      },
+      {
+        "name": "progress",
+        "value": "width 450ms ease",
+        "purpose": "Progress bar fill."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "760px"
+      },
+      {
+        "name": "history-stack",
+        "value": "1080px"
+      },
+      {
+        "name": "website-tablet",
+        "value": "980px"
+      },
+      {
+        "name": "website-phone",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action; Signal Green capsule with black label.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Pair a device</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 14px;border-radius:999px;border:1px solid transparent;font-family:var(--font);font-size:14px;font-weight:700;letter-spacing:0.005em;cursor:pointer;transition:transform .12s ease,background .12s,border-color .12s,color .12s}.ds-btn:active{transform:scale(0.97)}.ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-btn-primary{background:var(--accent);color:var(--accent-ink)}.ds-btn-primary:hover{background:var(--accent-strong);transform:scale(1.03)}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Second action; outlined capsule.",
+      "html": "<button class=\"ds-btn-secondary\">Show invitation</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;height:34px;padding:0 14px;border-radius:999px;background:transparent;border:1px solid rgba(255,255,255,0.3);color:var(--text);font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer;transition:transform .12s ease,background .12s,border-color .12s}.ds-btn-secondary:hover{background:rgba(255,255,255,0.04);border-color:#fff}.ds-btn-secondary:active{transform:scale(0.97)}.ds-btn-secondary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Low-emphasis action such as Show more.",
+      "html": "<button class=\"ds-btn-ghost\">Show 40 more</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:999px;border:0;background:transparent;color:var(--text-2);font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;transition:background .12s,color .12s,transform .12s}.ds-btn-ghost:hover{background:var(--hover);color:var(--text)}.ds-btn-ghost:active{transform:scale(0.97)}.ds-btn-ghost:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "pill-ok",
+      "description": "Tinted capsule for route and job status.",
+      "html": "<span class=\"ds-pill ds-pill-ok\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\"/></svg>Direct · 12 ms</span> <span class=\"ds-pill ds-pill-warn\">Relayed</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 10px;border-radius:999px;font-family:var(--font);font-size:12px;font-weight:650;white-space:nowrap}.ds-pill-ok{background:var(--ok-soft);color:var(--ok)}.ds-pill-warn{background:var(--warn-soft);color:var(--warn)}"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented-option-on",
+      "description": "Capsule filter; selected option is solid white with black text.",
+      "html": "<div class=\"ds-seg\" role=\"radiogroup\" aria-label=\"Direction\"><button role=\"radio\" aria-checked=\"true\" class=\"on\">Both</button><button role=\"radio\" aria-checked=\"false\">Received</button><button role=\"radio\" aria-checked=\"false\">Sent</button></div>",
+      "css": ".ds-seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,0.06)}.ds-seg button{height:28px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:var(--text-2);font-family:var(--font);font-size:13px;font-weight:550;cursor:pointer}.ds-seg button:hover{color:var(--text)}.ds-seg button.on{background:#fff;color:#000}.ds-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Filled field without a resting border.",
+      "html": "<input class=\"ds-input\" placeholder=\"Device name\" />",
+      "css": ".ds-input{height:36px;width:260px;padding:0 11px;border-radius:10px;background:rgba(255,255,255,0.07);border:1px solid transparent;color:var(--text);font-family:var(--font);font-size:14px;outline:0}.ds-input::placeholder{color:var(--text-3)}.ds-input:hover{background:rgba(255,255,255,0.09)}.ds-input:focus-visible,.ds-input:focus{border-color:rgba(255,255,255,0.55);background:rgba(255,255,255,0.09)}"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "",
+      "description": "Glass sidebar items; active item gets a lift and a green icon.",
+      "html": "<nav class=\"ds-nav\"><button class=\"ds-nav-item active\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/><path d=\"M12 7v5l4 2\"/></svg>History</button><button class=\"ds-nav-item\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 15V3\"/><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><path d=\"m7 10 5 5 5-5\"/></svg>Transfers<span class=\"ds-count\">2</span></button></nav>",
+      "css": ".ds-nav{display:flex;flex-direction:column;gap:2px;width:212px;padding:12px;background:rgba(18,18,18,0.55);backdrop-filter:var(--glass-blur);border-radius:10px}.ds-nav-item{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--text-2);font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;text-align:left}.ds-nav-item:hover{background:var(--hover);color:var(--text)}.ds-nav-item.active{background:rgba(255,255,255,0.09);box-shadow:var(--glass-edge);color:var(--text)}.ds-nav-item.active svg{color:var(--accent)}.ds-nav-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-count{margin-left:auto;padding:0 7px;border-radius:999px;background:var(--accent);color:#000;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Glass Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Resting container: translucent, blurred, edge highlight, no drop shadow.",
+      "html": "<section class=\"ds-panel\"><h3>With whom</h3><p>Lab workstation <span>18.4 GB in, 2.1 GB out</span></p></section>",
+      "css": ".ds-panel{width:320px;padding:14px 16px;border-radius:18px;background:var(--surface);border:1px solid var(--border);box-shadow:var(--glass-edge);backdrop-filter:var(--glass-blur);font-family:var(--font);color:var(--text)}.ds-panel h3{margin:0 0 12px;font-size:15px;font-weight:700;letter-spacing:-0.015em}.ds-panel p{margin:0;display:flex;justify-content:space-between;gap:10px;font-size:14px;font-weight:600}.ds-panel p span{font-size:12.5px;font-weight:400;color:var(--text-2);font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Safety Words",
+      "kind": "custom",
+      "refersTo": "safety-word",
+      "description": "Five capsules derived from both devices' keys; compared across screens.",
+      "html": "<span class=\"ds-words\" role=\"group\" aria-label=\"Safety words\"><span>harbor</span><span>velvet</span><span>orbit</span><span>maple</span><span>quartz</span></span>",
+      "css": ".ds-words{display:inline-flex;flex-wrap:wrap;gap:6px;font-family:var(--font)}.ds-words span{padding:3px 10px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:600;letter-spacing:0.01em}"
+    },
+    {
+      "name": "Calendar Day Dots",
+      "kind": "custom",
+      "refersTo": "calendar-day",
+      "description": "Area-scaled day dots: split wedges under Both, hollow ring below the named threshold, selected ring, today underline, scale-in entrance.",
+      "html": "<div class=\"ds-cal\"><button class=\"ds-day today\"><span class=\"n\">7</span><svg class=\"d\" style=\"--i:0\" width=\"28\" height=\"28\"><path d=\"M14,14L14,0A14,14 0 1 1 1.7,20.7Z\" fill=\"#16AE4D\"/><path d=\"M14,14L1.7,20.7A14,14 0 0 1 14,0Z\" fill=\"#9277F5\"/><path d=\"M14,0L14,14L1.7,20.7\" fill=\"none\" stroke=\"#202020\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/></svg></button><button class=\"ds-day sel\" aria-pressed=\"true\"><span class=\"n\">8</span><svg class=\"d\" style=\"--i:1\" width=\"40\" height=\"40\"><circle cx=\"20\" cy=\"20\" r=\"20\" fill=\"#16AE4D\"/></svg></button><button class=\"ds-day\"><span class=\"n\">9</span><svg class=\"d\" style=\"--i:2\" width=\"7\" height=\"7\"><circle cx=\"3.5\" cy=\"3.5\" r=\"2.5\" fill=\"none\" stroke=\"#16AE4D\" stroke-width=\"1.75\"/></svg></button><button class=\"ds-day\" disabled><span class=\"n\">10</span></button></div>",
+      "css": ".ds-cal{display:grid;grid-template-columns:repeat(4,72px);gap:4px;font-family:var(--font)}.ds-day{position:relative;aspect-ratio:1/0.78;border:0;border-radius:10px;background:rgba(255,255,255,0.022);display:grid;place-items:center;padding:0;cursor:pointer;transition:background .15s}.ds-day:disabled{cursor:default}.ds-day:not(:disabled):hover{background:var(--hover)}.ds-day:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.ds-day .n{position:absolute;top:6px;left:8px;font-size:12px;font-weight:550;line-height:1;color:var(--text-2);font-variant-numeric:tabular-nums}.ds-day:disabled .n{color:var(--text-3)}.ds-day.today .n{color:var(--accent);font-weight:750}.ds-day.today::after{content:\"\";position:absolute;left:8px;top:21px;width:12px;height:2px;border-radius:1px;background:var(--accent)}.ds-day.sel{background:rgba(255,255,255,0.1);box-shadow:inset 0 0 0 1.5px var(--text)}.ds-day.sel .n{color:var(--text);font-weight:750}.ds-day .d{margin-top:8px;border-radius:50%;transition:transform .18s cubic-bezier(0.2,0.8,0.2,1);animation:ds-dot-in .32s cubic-bezier(0.16,1,0.3,1) both;animation-delay:calc(var(--i,0)*9ms)}.ds-day:not(:disabled):hover .d{transform:scale(1.08)}@keyframes ds-dot-in{from{transform:scale(0.2);opacity:0}}@media (prefers-reduced-motion:reduce){.ds-day .d{animation:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Ledger",
+    "overview": "Relayless is a near-black, glass-paneled instrument that records what moved between your own devices and proves it stayed private. Translucent panels sit over a static near-black ground lit by two soft, fixed glows (a green one top left, a faint blue one bottom right), so the blur has something to refract without anything moving behind it. One vivid green carries action, focus and \"this is fine\"; everything else is white at three strengths. The world is calm at rest and specific when asked: figures are tabular, receipts are plain key and value lists, and charts speak in two validated series colours that never leak into text.\n\nDensity is moderate desktop-app density (14px body, 34px controls, 28px page rhythm) that relaxes on the phone into a bottom tab bar, 52px topbar and stacked single column. Every press target is a capsule; every container is a softly rounded glass panel. The project website (`website/`) is a sibling surface of the same world: the same #121212 ground with green and blue glows, the same green, Figtree, and capsule buttons with the same press and hover scale, set at marketing scale (17px body, display headlines up to 84px).",
+    "keyCharacteristics": [
+      "Near-black ground (bg) with fixed radial glows; translucent glass panels with a 1px top highlight.",
+      "One action green (accent); data series use their own deeper green and a violet.",
+      "Figtree Variable throughout, bold (700) titles in sentence case, tabular numerals for every figure.",
+      "Capsule (999px) buttons, pills, segmented controls and safety words; 18px panels; 12px floating tips.",
+      "Depth by translucency and blur; drop shadows only on things that float.",
+      "One choreographed motion moment (calendar dots); everything else is brief state feedback."
+    ],
+    "rules": [
+      {
+        "name": "The Series Is Not Text Rule",
+        "body": "Received Green and Sent Violet fill marks, lines, areas, wedges, bars and legend swatches only. Any words or numbers next to them are set in text, text-2 or text-3.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Action Green Rule",
+        "body": "Signal Green means \"act here\" or \"this is fine\". Data uses Received Green, never the action hex, so a dot can never be mistaken for a button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Neutral Magnitude Rule",
+        "body": "When only size matters (file categories), bars are Magnitude White. Hue is reserved for direction (received or sent) and status.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Every byte count, speed, percentage, count and calendar numeral uses tabular numerals so columns and live values do not jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Titles and every label a user reads as words are sentence case. Uppercase belongs only to the small section label, table heads and stat keys, and a section label is always the only heading for its block, never stacked above another title.",
+        "section": "typography"
+      },
+      {
+        "name": "The Shadows Float Rule",
+        "body": "A drop shadow means the element hovers above the page (tooltip, modal, toast). Panels at rest are glass with an edge highlight, never shadowed cards.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Capsule Control Rule",
+        "body": "If it responds to a press, it is fully rounded; if it holds content, it has a gentle corner. Do not mix the two on one element.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Area Not Radius Rule",
+        "body": "A day mark's area, not its diameter, is proportional to what moved, so twice the bytes is twice the ink.",
+        "section": "components"
+      },
+      {
+        "name": "The Named Threshold Rule",
+        "body": "Anything too small to draw at scale is drawn as a hollow ring, and the legend states the round size below which rings appear. A tiny day never borrows a filled dot.",
+        "section": "components"
+      },
+      {
+        "name": "The One Moment Rule",
+        "body": "The calendar dot entrance is the system's single choreographed motion. Everything else is state feedback of 120 to 200ms (hover, press, sheet and toast rise at 160ms) or progress.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** set every word and number in text, text-2 or text-3, including labels beside series swatches.",
+      "**Do** pair Received Green and Sent Violet as a set wherever direction is shown (graph, dots, pair bars, legends).",
+      "**Do** use Magnitude White bars when only size matters.",
+      "**Do** make every pressable control a capsule (999px) and every container a gently cornered glass panel (18px panels, 12px floating tips).",
+      "**Do** use tabular numerals for every figure.",
+      "**Do** scale data marks by area and name the hollow-ring threshold as a round size in the legend.",
+      "**Do** keep drop shadows for floating layers and give glass a reduced-transparency opaque fallback (elev).",
+      "**Do** mark the selected calendar day with a 1.5px white ring and a bold numeral, and today with a green numeral and short green underline."
+    ],
+    "donts": [
+      "**Don't** use Signal Green as a data colour or a series colour as text.",
+      "**Don't** encode file categories or other size-only data with hue.",
+      "**Don't** draw a below-threshold day as a filled dot, or scale dots by diameter.",
+      "**Don't** add a second choreographed animation; new motion is state feedback under 200ms and stops under reduced motion.",
+      "**Don't** put a small uppercase label above another heading; the section label is the block's only heading.",
+      "**Don't** give resting panels drop shadows or square corners."
+    ]
+  }
+}

@@ -17,7 +17,7 @@ fn make_file(path: &Path, size: usize, seed: u8) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut f = std::fs::File::create(path).unwrap();
     let mut block = vec![0u8; 1 << 20];
-    let mut x: u32 = seed as u32 * 2654435761 + 1;
+    let mut x: u32 = (seed as u32).wrapping_mul(2654435761).wrapping_add(1);
     let mut left = size;
     while left > 0 {
         for b in block.iter_mut() {
@@ -155,6 +155,46 @@ async fn full_transfer_folder_and_security() {
     assert_eq!(hash(&dest.join("nested/deeper/b.dat")), hash(&shared.join("nested/deeper/b.dat")));
     assert_eq!(std::fs::metadata(dest.join("nested/empty.txt")).unwrap().len(), 0);
     assert!(!dest.join("big.bin.rlpart").exists());
+
+    // Both devices derive the same safety words.
+    let words_s = sender.list_grants().unwrap().into_iter().find(|g| g.peer_id == peer_id_of(&receiver)).unwrap().safety_words;
+    let words_r = receiver.list_remotes().unwrap()[0].safety_words.clone();
+    assert_eq!(words_s.len(), 5);
+    assert_eq!(words_s, words_r);
+
+    // History: the receiver keeps a receipt per file, and the sender gets
+    // its own entry with the same fingerprint once the receipt arrives.
+    let got = receiver.list_history(0).unwrap();
+    assert_eq!(got.len(), 4);
+    let big = got.iter().find(|h| h.name == "big.bin").unwrap();
+    assert_eq!(big.direction, "received");
+    assert_eq!(big.size, 150 * 1024 * 1024 + 12345);
+    assert_eq!(big.direct_bytes, big.size, "loopback is a direct path");
+    assert_eq!(big.relay_bytes, 0);
+    assert!(big.active_ms > 0 && big.peak_bps > 0.0);
+    assert_eq!(big.fingerprint.len(), 64);
+    assert_eq!(big.safety_words, words_r);
+    let start = Instant::now();
+    let sent = loop {
+        let s = sender.list_history(0).unwrap();
+        if s.len() == 4 || start.elapsed() > Duration::from_secs(10) {
+            break s;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(sent.len(), 4, "sender recorded every receipt");
+    let big_s = sent.iter().find(|h| h.name == "big.bin").unwrap();
+    assert_eq!(big_s.direction, "sent");
+    assert_eq!(big_s.fingerprint, big.fingerprint);
+    assert_eq!(big_s.peer_name, "Receiver PC");
+
+    // Without names, history keeps only type and size; "off" clears it.
+    let mut st = receiver.settings();
+    st.history_names = false;
+    receiver.update_settings(st.clone()).unwrap();
+    st.history_retention = "off".into();
+    receiver.update_settings(st).unwrap();
+    assert!(receiver.list_history(0).unwrap().is_empty());
 
     // Revoking the device blocks further access.
     sender.revoke_device(&peer_id_of(&receiver)).unwrap();

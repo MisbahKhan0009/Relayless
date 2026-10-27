@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Relayless: send huge files directly between your devices</title>
+    <title>Relayless: your files never sit on a server</title>
     <meta
       name="description"
-      content="Free, open-source app that sends files of any size directly between Windows PCs and Android phones. End-to-end encrypted, no cloud upload, and transfers resume from the last verified megabyte."
+      content="Free, open-source app that sends files of any size directly between Windows PCs and Android phones. End-to-end encrypted, no account, no cloud copy, and a privacy receipt for every transfer."
     />
     <meta name="theme-color" content="#121212" />
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
     <link rel="apple-touch-icon" href="assets/icon-256.png" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Relayless: send huge files directly between your devices" />
-    <meta property="og:description" content="Direct, encrypted, resumable transfers between Windows and Android. No cloud upload, no size limit. Free and open source." />
+    <meta property="og:title" content="Relayless: your files never sit on a server" />
+    <meta property="og:description" content="Direct, encrypted, resumable transfers between Windows and Android, with a privacy receipt for every file. No account, no cloud copy, no size limit." />
     <meta property="og:image" content="https://misbahkhan0009.github.io/Relayless/assets/og.png" />
     <meta property="og:url" content="https://misbahkhan0009.github.io/Relayless/" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -39,9 +39,9 @@
           Relayless
         </a>
         <nav class="nav-links" aria-label="Sections">
+          <a href="#privacy">Privacy</a>
           <a href="#how">How it works</a>
           <a href="#features">Features</a>
-          <a href="#security">Security</a>
           <a href="#faq">FAQ</a>
         </nav>
         <div class="nav-actions">
@@ -59,16 +59,17 @@
       <section class="hero" id="top">
         <div class="wrap hero-grid">
           <div class="hero-copy">
-            <h1>Send huge files straight to another device.</h1>
+            <h1>Your files never sit on a server.</h1>
             <p class="lede">
-              Relayless moves files of any size directly between Windows PCs and Android phones. Pause it, lose Wi-Fi,
-              restart the computer: it carries on from the last verified megabyte.
+              Relayless sends files of any size straight from one device to another, Windows or Android, end-to-end
+              encrypted. Every transfer ends with a receipt that shows the route it took and what was kept along the
+              way: nothing.
             </p>
             <div class="cta-row">
               <a class="btn btn-green btn-lg" data-primary-dl href="#download">Download for Windows</a>
               <a class="btn btn-ghost btn-lg" data-secondary-dl href="#download">Get the Android app</a>
             </div>
-            <p class="fineprint">Free and open source under the MIT license. No account, no cloud storage.</p>
+            <p class="fineprint">Free and open source under the MIT license. No account, no analytics, no cloud copy.</p>
           </div>
 
           <div class="demo" aria-label="Interactive transfer demo">
@@ -101,6 +102,12 @@
               </div>
 
               <ol class="demo-log" data-log aria-live="polite"></ol>
+
+              <dl class="demo-receipt" data-receipt hidden>
+                <div><dt>Route</dt><dd>Direct, device to device (100%)</dd></div>
+                <div><dt>Verified</dt><dd>4,301 blocks of 1 MiB, then the whole file</dd></div>
+                <div><dt>Copies on servers</dt><dd>None</dd></div>
+              </dl>
             </div>
             <p class="demo-note">A live simulation. Try pausing, or cutting the connection.</p>
           </div>
@@ -119,10 +126,110 @@
         </div>
       </section>
 
+      <section class="section" id="privacy">
+        <div class="wrap receipt-section">
+          <div class="receipt-copy">
+            <h2>Privacy you can check.</h2>
+            <p class="section-lede">
+              Anyone can write "private" on a landing page. Relayless gives you a receipt for every file instead, stored
+              on your device, that says exactly how it travelled. Here is a real one, line by line.
+            </p>
+          </div>
+          <div class="receipt-sheet glass" role="table" aria-label="Example privacy receipt">
+            <div class="rs-head" role="row">
+              <span role="cell">
+                <strong>scene-041-take-2.mov</strong>
+                <span>18.2 GB from Dhaka-Edit-Bay, Oct 14 at 4:35 PM</span>
+              </span>
+              <span class="rs-badge" role="cell">Direct</span>
+            </div>
+            <div class="rs-row" role="row">
+              <span class="rs-k" role="cell">Route</span>
+              <span class="rs-v" role="cell">Direct, device to device</span>
+              <span class="rs-why" role="cell">The bytes went from one disk to the other. If a relay ever has to step in, the receipt says how much it carried, encrypted.</span>
+            </div>
+            <div class="rs-row" role="row">
+              <span class="rs-k" role="cell">Encryption</span>
+              <span class="rs-v" role="cell">QUIC with TLS 1.3</span>
+              <span class="rs-why" role="cell">The keys exist only on the two devices. Each device proves its identity on every connection.</span>
+            </div>
+            <div class="rs-row" role="row">
+              <span class="rs-k" role="cell">Verified</span>
+              <span class="rs-v" role="cell">18,637 blocks of 1 MiB</span>
+              <span class="rs-why" role="cell">Every block is checked with BLAKE3 as it arrives, then the whole file again before it gets its name.</span>
+            </div>
+            <div class="rs-row" role="row">
+              <span class="rs-k" role="cell">Fingerprint</span>
+              <span class="rs-v mono" role="cell">8c2d fb51 99af f2f1 a6f2 0abd</span>
+              <span class="rs-why" role="cell">Both devices record the same fingerprint, so either side can show the file arrived exactly as sent.</span>
+            </div>
+            <div class="rs-row" role="row">
+              <span class="rs-k" role="cell">Safety words</span>
+              <span class="rs-v" role="cell"><span class="words"><i>cedar</i><i>lantern</i><i>otter</i><i>quartz</i><i>violet</i></span></span>
+              <span class="rs-why" role="cell">Five words both devices derive from their keys. Same words on both screens means nobody was in between.</span>
+            </div>
+            <div class="rs-row rs-last" role="row">
+              <span class="rs-k" role="cell">On servers</span>
+              <span class="rs-v" role="cell">Nothing</span>
+              <span class="rs-why" role="cell">No account, no upload, no copy. There is no Relayless server to keep one.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="words">
+        <div class="wrap words-section">
+          <div class="device-pair" aria-label="Both devices show the same safety words">
+            <div class="device glass">
+              <span class="device-name">On Berlin-Studio</span>
+              <span class="words big"><i>cedar</i><i>lantern</i><i>otter</i><i>quartz</i><i>violet</i></span>
+            </div>
+            <div class="device glass">
+              <span class="device-name">On Dhaka-Edit-Bay</span>
+              <span class="words big"><i>cedar</i><i>lantern</i><i>otter</i><i>quartz</i><i>violet</i></span>
+            </div>
+          </div>
+          <div>
+            <h2>Five words rule out a middle-man.</h2>
+            <p class="section-lede">
+              When a new device asks for access, both screens show five words made from the two devices' keys. Read them
+              to each other. If they match, the connection is between you two and no one else. If anyone tried to sit in
+              the middle, the words would be different.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="history">
+        <div class="wrap feature-list">
+          <article class="feature">
+            <div class="feature-copy">
+              <h2>Your history stays home.</h2>
+              <p>
+                A calendar shows each day as a dot sized by how much moved. Hover a day to see the files, check who you
+                trade the most data with, and what kind of files they are. All of it is worked out on your device from
+                your own receipts.
+              </p>
+              <ul class="ticks">
+                <li>Never uploaded, never synced</li>
+                <li>Kept for a year by default, or 90 days, 30 days, forever, or not at all</li>
+                <li>Keep sizes and receipts without file names if you prefer</li>
+              </ul>
+            </div>
+            <figure class="feature-shot glass">
+              <picture>
+                <source media="(max-width: 640px)" srcset="assets/screens/phone-history.webp" width="1170" height="2532" />
+                <img src="assets/screens/desktop-history.webp" width="2560" height="1600" loading="lazy" alt="History screen: a month calendar with dots sized by data moved, totals per device and per file type" />
+              </picture>
+            </figure>
+          </article>
+        </div>
+      </section>
+
       <section class="section" id="how">
         <div class="wrap">
           <h2>Four steps, no uploads.</h2>
-          <p class="section-lede">The file never sits on a server. It travels once, from the sender's disk to the receiver's.</p>
+          <p class="section-lede">Each file travels once, from the sender's disk to the receiver's, and leaves a matching receipt on both.</p>
           <ol class="steps">
             <li>
               <span class="step-n">1</span>
@@ -136,8 +243,8 @@
             </li>
             <li>
               <span class="step-n">3</span>
-              <h3>Pick files</h3>
-              <p>The receiver browses the folder like a file manager and chooses where to save.</p>
+              <h3>Compare words, pick files</h3>
+              <p>Check the five safety words match, then browse the folder like a file manager and choose where to save.</p>
             </li>
             <li>
               <span class="step-n">4</span>
@@ -174,8 +281,8 @@
               <h2>Fast on long, lossy links.</h2>
               <p>
                 Relayless uses QUIC with BBR congestion control and many parallel streams, so a Dhaka to Berlin link stays
-                full instead of collapsing at the first lost packet. It runs at low CPU priority, streams from disk in
-                small blocks and never loads a whole file into memory.
+                full instead of collapsing at the first lost packet. A live graph shows both directions and marks every
+                pause, reconnect and route change. It runs at low CPU priority and never loads a whole file into memory.
               </p>
               <ul class="ticks">
                 <li>Up to 32 parallel streams per file</li>
@@ -184,7 +291,7 @@
               </ul>
             </div>
             <figure class="feature-shot glass">
-              <img src="assets/screens/desktop-overview.webp" width="2560" height="1600" loading="lazy" alt="Overview screen showing receive speed, active transfers and devices" />
+              <img src="assets/screens/desktop-overview.webp" width="2560" height="1600" loading="lazy" alt="Overview screen with a live graph of receive and send speed over the last two minutes, and active transfers" />
             </figure>
           </article>
 
@@ -219,28 +326,49 @@
             </div>
             <div class="phones">
               <img src="assets/screens/phone-home.webp" width="1170" height="2532" loading="lazy" alt="Relayless home screen on Android" />
-              <img src="assets/screens/phone-transfers.webp" width="1170" height="2532" loading="lazy" alt="Transfers screen on Android" />
+              <img src="assets/screens/phone-history.webp" width="1170" height="2532" loading="lazy" alt="History calendar on Android with a dot for each day files moved" />
             </div>
           </article>
         </div>
       </section>
 
       <section class="section" id="security">
-        <div class="wrap security">
-          <div>
-            <h2>Private by design.</h2>
-            <p class="section-lede">
-              Connections are end-to-end encrypted and tied to each device's own key. Public relays only help the two
-              devices find each other; in the default direct-only mode, no file data ever passes through them.
-            </p>
+        <div class="wrap">
+          <h2>Who sees what.</h2>
+          <p class="section-lede">
+            Two devices on the internet need a little help to find each other. Here is everything that help can see, and
+            everything it can't.
+          </p>
+          <div class="sees">
+            <div class="sees-col">
+              <h3>Only your two devices</h3>
+              <ul>
+                <li>File names, folder listings and file contents</li>
+                <li>Who you share with, and your transfer history</li>
+                <li>Receipts, fingerprints and safety words</li>
+                <li>Your invitation keys, stored as hashes on the sender</li>
+              </ul>
+            </div>
+            <div class="sees-col">
+              <h3>The coordination service</h3>
+              <ul>
+                <li>Two device IDs and their IP addresses, so they can punch through routers</li>
+                <li>For a short code, a sealed record it can't open, for 30 minutes</li>
+                <li>Encrypted packets, only if you allow relay fallback and no direct path opens</li>
+              </ul>
+            </div>
+            <div class="sees-col">
+              <h3>Anyone else, including us</h3>
+              <ul>
+                <li>Nothing. There is no Relayless account, server or analytics.</li>
+              </ul>
+            </div>
           </div>
           <ul class="sec-list">
-            <li><strong>Encrypted end to end</strong><span>QUIC with TLS 1.3. Each device has an Ed25519 identity that is checked on every connection.</span></li>
             <li><strong>Invitations you control</strong><span>Random 128-bit keys that expire, can be limited to a number of devices, and can be revoked.</span></li>
-            <li><strong>Approval for new devices</strong><span>You see the device name before it can browse anything. Remove access in one click.</span></li>
+            <li><strong>Approval for new devices</strong><span>You see the device name and safety words before it can browse anything. Remove access in one click.</span></li>
             <li><strong>One folder, read-only</strong><span>Path tricks, symlinks and junctions that point outside the folder are refused by the sender.</span></li>
-            <li><strong>Direct-only by default</strong><span>The app shows whether a route is direct or relayed and never switches silently.</span></li>
-            <li><strong>No account, no telemetry</strong><span>Nothing to sign up for. File names and contents never leave the two devices.</span></li>
+            <li><strong>Direct-only by default</strong><span>File data waits for a direct path instead of switching to a relay silently.</span></li>
           </ul>
         </div>
       </section>
@@ -355,6 +483,14 @@ cargo test -p relayless-core --release</code></pre>
               <p>No. They can only list and download from the folder you shared, and only after you approve their device. You can stop sharing or remove a device at any time.</p>
             </details>
             <details>
+              <summary>Where is my transfer history stored?</summary>
+              <p>Only in the app's database on your device. Nothing is synced or uploaded. You choose how long it is kept, can keep it without file names, and can clear it at any time in Settings.</p>
+            </details>
+            <details>
+              <summary>What are safety words for?</summary>
+              <p>They let two people confirm, out loud or over a call, that their devices are talking to each other directly. They are derived from both devices' keys, so a device in the middle would produce different words.</p>
+            </details>
+            <details>
               <summary>Does it cost anything?</summary>
               <p>No. Relayless is free and open source. There is no account and no paid tier.</p>
             </details>
@@ -366,7 +502,7 @@ cargo test -p relayless-core --release</code></pre>
     <footer class="footer">
       <div class="wrap footer-inner">
         <span class="brand small">Relayless</span>
-        <span>MIT licensed. Made for people who move big files.</span>
+        <span>MIT licensed. Your files, your devices, nobody in between.</span>
         <nav aria-label="Footer">
           <a href="https://github.com/MisbahKhan0009/Relayless">GitHub</a>
           <a href="https://github.com/MisbahKhan0009/Relayless/releases">Releases</a>

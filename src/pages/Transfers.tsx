@@ -15,6 +15,7 @@ import { android, api, errorText, type Job } from "../api";
 import { isAndroid } from "../platform";
 import { bytes, dateTime, duration, isActive, mbit, speed, statusTone } from "../format";
 import { useStore } from "../store";
+import { LiveFlow, useFlowActive } from "../flow";
 import { Button, Empty, IconButton, Modal, Progress, RouteBadge, StatusIcon, StatusPill } from "../ui";
 
 function explain(job: Job): string | null {
@@ -208,6 +209,7 @@ type Filter = "all" | "active" | "done" | "attention";
 
 export default function Transfers() {
   const { jobs, setPage } = useStore();
+  const flowActive = useFlowActive();
   const [filter, setFilter] = useState<Filter>("all");
   const list = useMemo(() => Object.values(jobs).sort((a, b) => b.createdAt - a.createdAt), [jobs]);
   const counts = {
@@ -230,24 +232,19 @@ export default function Transfers() {
 
   return (
     <div className="page">
+      {(flowActive || total > 0) && <LiveFlow />}
       {list.length > 0 && (
-        <div className="stats">
-          <div className="stat">
-            <div className="k">Download speed</div>
-            <div className="v">{speed(total)}</div>
-            <div className="s">{total > 0 ? mbit(total) : "Idle"}</div>
-          </div>
-          <div className="stat">
-            <div className="k">Remaining</div>
-            <div className="v">{bytes(remaining)}</div>
-            <div className="s">{total > 0 && remaining > 0 ? `about ${duration(remaining / total)}` : `${counts.active} active`}</div>
-          </div>
-          <div className="stat">
-            <div className="k">Completed</div>
-            <div className="v">{counts.done}</div>
-            <div className="s">verified end to end</div>
-          </div>
-        </div>
+        <p className="transfers-sum muted">
+          {counts.active > 0 ? (
+            <>
+              <b className="num">{bytes(remaining)}</b> left across {counts.active} active transfer{counts.active === 1 ? "" : "s"}
+              {total > 0 && remaining > 0 ? <>, about <b className="num">{duration(remaining / total)}</b> at the current speed</> : null}.{" "}
+            </>
+          ) : (
+            "Nothing is in progress. "
+          )}
+          {counts.done} completed and verified end to end.
+        </p>
       )}
       <div>
         <div className="tabs" role="tablist">

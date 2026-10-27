@@ -84,6 +84,7 @@ export interface Grant {
   lastSeenAt: number;
   connected: boolean;
   route: RouteInfo;
+  safetyWords: string[];
 }
 
 export interface PeerStatus {
@@ -101,6 +102,7 @@ export interface Remote {
   createdAt: number;
   lastSeenAt: number;
   status: PeerStatus;
+  safetyWords: string[];
 }
 
 export interface RemoteEntry {
@@ -124,6 +126,7 @@ export interface AccessRequest {
   shareId: string;
   shareName: string;
   createdAt: number;
+  safetyWords: string[];
 }
 
 export interface Activity {
@@ -164,6 +167,29 @@ export interface Settings {
   notifications: boolean;
   closeToTray: boolean;
   onboarded: boolean;
+  historyRetention: "forever" | "365" | "90" | "30" | "off";
+  historyNames: boolean;
+}
+
+/** A finished transfer kept on this device, with its privacy receipt. */
+export interface HistoryEntry {
+  id: string;
+  direction: "received" | "sent";
+  peerId: string;
+  peerName: string;
+  /** Empty when the user chose not to keep file names. */
+  name: string;
+  ext: string;
+  size: number;
+  startedAt: number;
+  finishedAt: number;
+  activeMs: number;
+  directBytes: number;
+  relayBytes: number;
+  peakBps: number;
+  blocks: number;
+  fingerprint: string;
+  safetyWords: string[];
 }
 
 export interface Bootstrap {
@@ -178,6 +204,7 @@ export interface JoinResult {
   peerId: string;
   senderName: string;
   shares: { id: string; name: string }[];
+  safetyWords: string[];
 }
 
 export interface LocalDir {
@@ -222,6 +249,8 @@ export const api = {
   cancelJob: (id: string, deletePartial: boolean) => invoke<void>("cancel_job", { id, deletePartial }),
   removeJob: (id: string) => invoke<void>("remove_job", { id }),
   listActivity: (limit: number) => invoke<Activity[]>("list_activity", { limit }),
+  listHistory: (sinceMs: number) => invoke<HistoryEntry[]>("list_history", { sinceMs }),
+  clearHistory: () => invoke<void>("clear_history"),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
   listLocalDir: (path: string | null) => invoke<LocalDir>("list_local_dir", { path }),
   makeDir: (parent: string, name: string) => invoke<string>("make_dir", { parent, name }),

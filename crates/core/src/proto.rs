@@ -55,6 +55,23 @@ pub enum Request {
         #[serde(default)]
         from: u64,
     },
+    /// Sent by the receiver after a file is complete and verified, so the
+    /// sender can keep its own history entry. Older senders reject it,
+    /// which is harmless.
+    Receipt {
+        share: String,
+        path: Vec<String>,
+        size: u64,
+        job: String,
+        fingerprint: String,
+        started_at: i64,
+        finished_at: i64,
+        active_ms: u64,
+        direct_bytes: u64,
+        relay_bytes: u64,
+        peak_bps: f64,
+        blocks: u64,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +136,7 @@ pub enum Response {
     Walk { files: Vec<WalkFile>, truncated: bool },
     Stat { size: u64, mtime_ms: i64, dir: bool },
     Chunk { len: u64 },
+    Ack,
     Error { code: ErrCode, message: String },
 }
 

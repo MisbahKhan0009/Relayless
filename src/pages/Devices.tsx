@@ -3,7 +3,7 @@ import { FolderOpen, KeyRound, Monitor, PlugZap, Trash2, Waypoints, Zap } from "
 import { api, errorText, type Remote } from "../api";
 import { ago } from "../format";
 import { useStore } from "../store";
-import { Button, Empty, IconButton, Modal, RouteBadge } from "../ui";
+import { Button, Empty, IconButton, Modal, RouteBadge, SafetyWords } from "../ui";
 
 function RemoteCard({ r }: { r: Remote }) {
   const { openBrowser, toast } = useStore();
@@ -44,6 +44,12 @@ function RemoteCard({ r }: { r: Remote }) {
           <Trash2 size={16} />
         </IconButton>
       </div>
+      {r.safetyWords?.length > 0 && (
+        <div className="words-row">
+          <span className="small faint">Safety words</span>
+          <SafetyWords words={r.safetyWords} compact />
+        </div>
+      )}
       {r.shares.length > 0 ? (
         <div className="sub-list">
           {r.shares.map((s) => (

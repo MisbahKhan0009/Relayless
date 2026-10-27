@@ -22,6 +22,7 @@
       toggle: $("[data-toggle]"),
       drop: $("[data-drop]"),
       log: $("[data-log]"),
+      receipt: $("[data-receipt]"),
     };
     const SIZE = 4.2 * GB;
     const COMMIT_MS = 2000; // progress is flushed and recorded every 2 s
@@ -92,8 +93,9 @@
             state = "done";
             setRoute("Complete");
             log("Verified 4.20 GB. Saved to Downloads.", true);
+            el.receipt.hidden = false;
             render();
-            timer = setTimeout(restart, 5000);
+            timer = setTimeout(restart, 7000);
           }, 1600);
         }
       }
@@ -109,6 +111,7 @@
       el.toggle.disabled = false;
       el.drop.disabled = false;
       el.toggle.textContent = "Pause";
+      el.receipt.hidden = true;
       setRoute("Direct, 176 ms");
       log("Starting the next download.");
     };

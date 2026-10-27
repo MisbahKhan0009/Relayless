@@ -137,6 +137,16 @@ async fn handle_stream(
                 Err(r) => write_frame(&mut send, &r).await?,
             }
         }
+        Request::Receipt { share, path, size, job, fingerprint, started_at, finished_at, active_ms, direct_bytes, relay_bytes, peak_bps, blocks } => {
+            let resp = match authorize(inner, peer, &share) {
+                Ok(s) => {
+                    let r = ReceiptIn { path, size, job, fingerprint, started_at, finished_at, active_ms, direct_bytes, relay_bytes, peak_bps, blocks };
+                    record_sent(inner, peer, &s, r).await
+                }
+                Err(r) => r,
+            };
+            write_frame(&mut send, &resp).await?;
+        }
     }
     let _ = send.finish();
     let _ = send.stopped().await;
@@ -283,6 +293,7 @@ async fn handle_hello(
             share_id: share.id.clone(),
             share_name: share.name.clone(),
             created_at: now_ms(),
+            safety_words: crate::words::safety_words(inner.endpoint.id().as_bytes(), peer.as_bytes()),
         };
         inner.pending.lock().insert(req.id.clone(), PendingAccess { request: req.clone(), respond: tx });
         inner.emit(CoreEvent::AccessRequested(req.clone()));
@@ -310,6 +321,77 @@ async fn handle_hello(
     inner.emit(CoreEvent::SharesChanged);
     write_frame(send, &reply(HelloStatus::Approved, granted_shares(inner, peer), None)).await?;
     Ok(())
+}
+
+// ------------------------------------------------------------------ history
+
+struct ReceiptIn {
+    path: Vec<String>,
+    size: u64,
+    job: String,
+    fingerprint: String,
+    started_at: i64,
+    finished_at: i64,
+    active_ms: u64,
+    direct_bytes: u64,
+    relay_bytes: u64,
+    peak_bps: f64,
+    blocks: u64,
+}
+
+/// Keeps the sender's own history entry for a file a receiver finished.
+/// Only accepted for a file that exists in the share at the stated size.
+async fn record_sent(inner: &Arc<Inner>, peer: EndpointId, share: &ShareRow, r: ReceiptIn) -> Response {
+    let settings = inner.settings();
+    if !settings.history_on() {
+        return Response::Ack;
+    }
+    let root = PathBuf::from(&share.root_path);
+    let comps = r.path.clone();
+    let size_ok = tokio::task::spawn_blocking(move || {
+        resolve_in_share(&root, &comps).ok().and_then(|p| std::fs::metadata(p).ok()).filter(|m| m.is_file()).map(|m| m.len())
+    })
+    .await
+    .ok()
+    .flatten();
+    if size_ok != Some(r.size) {
+        return Response::err(ErrCode::NotFound, "Not found.");
+    }
+    let clean = |s: &str, n: usize| -> String { s.chars().filter(|c| !c.is_control()).take(n).collect() };
+    let name = r.path.last().cloned().unwrap_or_default();
+    let peer_s = peer.to_string();
+    let peer_name = inner
+        .db
+        .list_grants()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|g| g.peer_id == peer_s)
+        .map(|g| g.device_name)
+        .unwrap_or_else(|| short_peer(&peer_s));
+    let now = now_ms();
+    let entry = crate::db::HistoryRow {
+        id: format!("s-{}-{}", short_peer(&peer_s), clean(&r.job, 40)),
+        direction: "sent".into(),
+        peer_id: peer_s,
+        peer_name,
+        name: if settings.history_names { name.clone() } else { String::new() },
+        ext: crate::receiver::ext_of(&name),
+        size: r.size,
+        started_at: r.started_at.clamp(0, now),
+        finished_at: r.finished_at.clamp(0, now),
+        stats: crate::db::JobStats {
+            direct_bytes: r.direct_bytes.min(r.size),
+            relay_bytes: r.relay_bytes.min(r.size),
+            active_ms: r.active_ms,
+            peak_bps: if r.peak_bps.is_finite() { r.peak_bps.max(0.0) } else { 0.0 },
+        },
+        blocks: r.blocks,
+        fingerprint: clean(&r.fingerprint, 64),
+    };
+    if inner.db.insert_history(&entry).is_ok() {
+        inner.emit(CoreEvent::HistoryChanged);
+    }
+    Response::Ack
 }
 
 // ------------------------------------------------------------------ filesystem access

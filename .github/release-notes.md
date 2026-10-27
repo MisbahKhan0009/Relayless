@@ -1,3 +1,10 @@
+## What's new
+
+- **Privacy receipts:** every finished file keeps a receipt on your device: the route it took, how it was encrypted and verified, and what servers stored (nothing).
+- **History:** a month calendar where each day's dot grows with how much moved. Hover a day for its files; see totals per device and per file type. Stored only on your device, with a retention setting.
+- **Safety words:** five matching words on both screens when a new device asks for access.
+- **Live speed graph** for receiving and sending, with markers for pauses, reconnects and route changes.
+
 ## Download
 
 | Device | File |

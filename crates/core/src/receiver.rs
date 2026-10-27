@@ -27,7 +27,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::db::JobRow;
+use crate::db::{HistoryRow, JobRow, JobStats};
 use crate::inner::Inner;
 use crate::net::route_of;
 use crate::proto::*;
@@ -333,6 +333,13 @@ pub struct JobHandle {
     pub inflight: AtomicU64,
     pub verified_chunks: AtomicU64,
     speed: Mutex<SpeedState>,
+    /// Bytes received over a direct path and through a relay.
+    pub direct_bytes: AtomicU64,
+    pub relay_bytes: AtomicU64,
+    /// Time spent actually downloading, excluding the current stretch.
+    active_ms: AtomicU64,
+    active_since: Mutex<Option<Instant>>,
+    peak_bps: Mutex<f64>,
 }
 
 impl JobHandle {
@@ -353,6 +360,12 @@ impl JobHandle {
             s.samples += 1;
             s.last_bytes = done;
             s.last_at = Instant::now();
+            if s.samples >= 3 {
+                let mut p = self.peak_bps.lock();
+                if s.ema > *p {
+                    *p = s.ema;
+                }
+            }
         }
         let eta = if s.samples >= 6 && s.ema > 4096.0 {
             Some((size.saturating_sub(done) as f64 / s.ema) as u64)
@@ -372,6 +385,29 @@ impl JobHandle {
 
     pub fn status(&self) -> JobStatus {
         self.row.lock().status
+    }
+
+    fn begin_active(&self) {
+        let mut a = self.active_since.lock();
+        if a.is_none() {
+            *a = Some(Instant::now());
+        }
+    }
+
+    fn end_active(&self) {
+        if let Some(t) = self.active_since.lock().take() {
+            self.active_ms.fetch_add(t.elapsed().as_millis() as u64, Ordering::Relaxed);
+        }
+    }
+
+    pub fn stats(&self) -> JobStats {
+        let running = self.active_since.lock().map(|t| t.elapsed().as_millis() as u64).unwrap_or(0);
+        JobStats {
+            direct_bytes: self.direct_bytes.load(Ordering::Relaxed),
+            relay_bytes: self.relay_bytes.load(Ordering::Relaxed),
+            active_ms: self.active_ms.load(Ordering::Relaxed) + running,
+            peak_bps: *self.peak_bps.lock(),
+        }
     }
 }
 
@@ -479,6 +515,11 @@ pub fn spawn_job(inner: &Arc<Inner>, job_id: &str) {
         inflight: AtomicU64::new(0),
         verified_chunks: AtomicU64::new(verified_chunks),
         speed: Mutex::new(SpeedState { last_bytes: row.verified_bytes, last_at: Instant::now(), ema: 0.0, samples: 0 }),
+        direct_bytes: AtomicU64::new(row.stats.direct_bytes),
+        relay_bytes: AtomicU64::new(row.stats.relay_bytes),
+        active_ms: AtomicU64::new(row.stats.active_ms),
+        active_since: Mutex::new(None),
+        peak_bps: Mutex::new(row.stats.peak_bps),
         row: Mutex::new(row),
         peer_name,
     });
@@ -583,6 +624,8 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
 
         let before = h.verified.load(Ordering::Relaxed);
         let res = transfer_pass(inner, h, &conn, peer).await;
+        h.end_active();
+        let _ = inner.db.save_job_stats(&h.id, &h.stats());
         if h.verified.load(Ordering::Relaxed) > before {
             attempt = 0;
             announced_wait = false;
@@ -725,6 +768,7 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
         return Ok(());
     }
     set_status(inner, h, JobStatus::Downloading, None);
+    h.begin_active();
 
     let committed: HashMap<u64, u64> = saved.iter().map(|(i, d, _)| (*i, *d)).collect();
     let partials: Arc<Mutex<HashMap<u64, (u64, Vec<[u8; 32]>)>>> =
@@ -916,6 +960,11 @@ async fn fetch_chunk(
         done += n as u64;
         hashes.push(want);
         h.inflight.fetch_add(n as u64, Ordering::Relaxed);
+        if pc.route.borrow().is_direct() {
+            h.direct_bytes.fetch_add(n as u64, Ordering::Relaxed);
+        } else {
+            h.relay_bytes.fetch_add(n as u64, Ordering::Relaxed);
+        }
         partials.lock().insert(idx, (done, hashes.clone()));
         let _ = tx.send(Progress::Partial { idx, done, hashes: hashes.clone() });
         blocks += 1;
@@ -969,7 +1018,7 @@ async fn commit_loop(
             let plist: Vec<crate::db::Partial> = parts.drain().map(|(i, (d, hs))| (i, d, hs)).collect();
             inner
                 .db
-                .commit_progress(&row.id, &dones, &plist, new_verified)
+                .commit_progress(&row.id, &dones, &plist, new_verified, &h.stats())
                 .map_err(|e| JobError::Fatal(format!("database error: {e}")))?;
             for (i, _) in &dones {
                 committed.remove(i);
@@ -1056,9 +1105,10 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
     }
 
     let dest = PathBuf::from(&row.dest_path);
+    let temp = row.temp_path.clone();
     let final_path = tokio::task::spawn_blocking(move || -> Result<PathBuf, JobError> {
         let target = unique_path(&dest);
-        std::fs::rename(&row.temp_path, &target).map_err(|e| disk_err(e, "renaming the finished file"))?;
+        std::fs::rename(&temp, &target).map_err(|e| disk_err(e, "renaming the finished file"))?;
         Ok(target)
     })
     .await
@@ -1076,9 +1126,82 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
     h.verified.store(row.size, Ordering::Relaxed);
     h.inflight.store(0, Ordering::Relaxed);
     emit_job(inner, h);
+    record_received(inner, &row, h);
     inner.log("success", &format!("Downloaded and verified {} ({})", row.display_name, human_bytes(row.size)), Some(&row.id));
     inner.notify("Transfer complete", &format!("{} was downloaded and verified.", row.display_name));
     debug!("job {} complete", row.id);
     Ok(true)
 }
 
+/// File extension in lower case, for categories in history.
+pub fn ext_of(name: &str) -> String {
+    std::path::Path::new(name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase().chars().take(12).collect())
+        .unwrap_or_default()
+}
+
+/// Adds the finished download to local history and tells the sender, so
+/// it can keep its own entry. Both steps are best effort.
+fn record_received(inner: &Arc<Inner>, row: &JobRow, h: &Arc<JobHandle>) {
+    let settings = inner.settings();
+    let mut stats = h.stats();
+    // Short transfers can finish before the speed estimate settles; the
+    // average is a floor for the peak.
+    if stats.active_ms > 0 {
+        let avg = (stats.direct_bytes + stats.relay_bytes) as f64 / (stats.active_ms as f64 / 1000.0);
+        if avg > stats.peak_bps {
+            stats.peak_bps = avg;
+        }
+    }
+    let fingerprint = inner.db.file_fingerprint(&row.id).unwrap_or_default();
+    let blocks = row.size.div_ceil(BLOCK as u64);
+    let finished_at = now_ms();
+    if settings.history_on() {
+        let entry = HistoryRow {
+            id: format!("r-{}", row.id),
+            direction: "received".into(),
+            peer_id: row.peer_id.clone(),
+            peer_name: h.peer_name.clone(),
+            name: if settings.history_names { row.display_name.clone() } else { String::new() },
+            ext: ext_of(&row.display_name),
+            size: row.size,
+            started_at: row.created_at,
+            finished_at,
+            stats: stats.clone(),
+            blocks,
+            fingerprint: fingerprint.clone(),
+        };
+        if inner.db.insert_history(&entry).is_ok() {
+            inner.emit(CoreEvent::HistoryChanged);
+        }
+    }
+    let Ok(peer) = row.peer_id.parse::<EndpointId>() else { return };
+    let receipt = Request::Receipt {
+        share: row.share_id.clone(),
+        path: row.remote_path.clone(),
+        size: row.size,
+        job: row.id.clone(),
+        fingerprint,
+        started_at: row.created_at,
+        finished_at,
+        active_ms: stats.active_ms,
+        direct_bytes: stats.direct_bytes,
+        relay_bytes: stats.relay_bytes,
+        peak_bps: stats.peak_bps,
+        blocks,
+    };
+    let inner = inner.clone();
+    tokio::spawn(async move {
+        let conn = match get_conn(&inner, peer).await {
+            Ok(c) => c,
+            Err(e) => {
+                debug!("receipt not sent: {e}");
+                return;
+            }
+        };
+        if let Err(e) = request(&conn, &receipt).await {
+            debug!("sender did not take the receipt: {e}");
+        }
+    });
+}

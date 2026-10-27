@@ -33,9 +33,11 @@ Especially interesting:
 - file data passing through a relay while direct-only mode is on
 - crashes or resource exhaustion triggered by a remote peer
 - secrets or file contents appearing in logs
+- safety words that differ from what both devices should derive, or that could be forced to collide
+- history or receipt data leaving the device, or a peer writing history entries it shouldn't
 
 Out of scope: attacks that require an already compromised device, social engineering, and the unsigned-installer warnings shown by Windows and Android.
 
 ## Design
 
-The security model is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Ed25519 device identities, QUIC with TLS 1.3, hashed and expiring invitation tokens, Argon2id-stretched short codes, sender-side authorization of every request, and BLAKE3 verification of every 1 MiB block and of the final file.
+The security model is described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Ed25519 device identities, QUIC with TLS 1.3, hashed and expiring invitation tokens, Argon2id-stretched short codes, sender-side authorization of every request, and BLAKE3 verification of every 1 MiB block and of the final file, safety words derived from both device keys, and history kept only on the device.

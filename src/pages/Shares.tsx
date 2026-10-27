@@ -9,7 +9,7 @@ import { InviteDialog } from "../dialogs";
 import { StorageAccessNotice } from "../android";
 import { ago, speed, until } from "../format";
 import { useStore } from "../store";
-import { Button, Empty, IconButton, Modal, Pill, RouteBadge } from "../ui";
+import { Button, Empty, IconButton, Modal, Pill, RouteBadge, SafetyWords } from "../ui";
 
 /** Opens the native folder picker and creates a share; returns the new share. */
 export function useShareFolder() {
@@ -74,6 +74,7 @@ function ShareCard({ share, onInvite }: { share: Share; onInvite: () => void }) 
                   <Monitor size={15} className="faint" />
                   <div className="stack grow">
                     <span className="truncate"><b>{g.deviceName}</b> <span className="faint small mono">{g.peerShort}</span></span>
+                    {g.safetyWords?.length > 0 && <SafetyWords words={g.safetyWords} compact />}
                     <span className="small faint truncate">
                       {up && up.bps > 0 ? `Downloading ${up.files.join(", ")} at ${speed(up.bps)}` : g.connected ? "Connected" : `Last seen ${ago(g.lastSeenAt)}`}
                     </span>

@@ -9,6 +9,7 @@ mod receiver;
 mod sender;
 pub mod types;
 pub mod util;
+pub mod words;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -112,6 +113,7 @@ impl Core {
             addr_hints: Mutex::new(Default::default()),
             jobs: Mutex::new(Default::default()),
         });
+        prune_history(&inner);
         tokio::spawn(sender::accept_loop(inner.clone()));
         tokio::spawn(ticker(inner.clone()));
         tokio::spawn(network_watch(inner.clone()));
@@ -170,6 +172,9 @@ impl Core {
         self.inner.download_limiter.set_rate(s.download_limit_kbps * 1024);
         self.inner.slots.set_max(s.max_concurrent_jobs as usize);
         *self.inner.settings.write() = s.clone();
+        if s.history_retention != old.history_retention && prune_history(&self.inner) > 0 {
+            self.inner.emit(CoreEvent::HistoryChanged);
+        }
         Ok(s)
     }
 
@@ -399,6 +404,7 @@ impl Core {
                     .and_then(|id| incoming.get(&id).and_then(|v| v.last().map(|(_, c)| c.clone())));
                 let share_name = shares.iter().find(|s| s.id == g.share_id).map(|s| s.name.clone()).unwrap_or_default();
                 GrantDto {
+                    safety_words: self.words_with(&g.peer_id),
                     peer_short: short_peer(&g.peer_id),
                     peer_id: g.peer_id,
                     device_name: g.device_name,
@@ -477,7 +483,7 @@ impl Core {
     pub async fn join(&self, input: &str) -> Result<JoinResult> {
         let input = input.trim();
         let inv = if invite::is_short_code(input) {
-            self.inner.emit(CoreEvent::JoinStatus("Looking up the code…".into()));
+            self.inner.emit(CoreEvent::JoinStatus { message: "Looking up the code…".into(), safety_words: None });
             self.resolve_code(input).await?
         } else {
             Invite::decode(input)?
@@ -496,17 +502,20 @@ impl Core {
         if let Some(u) = &inv.relay_url {
             addr = addr.with_relay_url(u.clone());
         }
-        self.inner.emit(CoreEvent::JoinStatus("Connecting to the sender…".into()));
+        let words = words::safety_words(self.inner.endpoint.id().as_bytes(), peer.as_bytes());
+        self.inner.emit(CoreEvent::JoinStatus { message: "Connecting to the sender…".into(), safety_words: Some(words.clone()) });
         let conn = tokio::time::timeout(Duration::from_secs(40), self.inner.endpoint.connect(addr, proto::ALPN))
             .await
             .map_err(|_| anyhow!("Couldn't reach the sender. Make sure Relayless is open on their computer and both of you are online."))?
             .map_err(|e| anyhow!("Couldn't reach the sender: {e}"))?;
         let device = self.inner.settings.read().device_name.clone();
         let inner = self.inner.clone();
+        let w2 = words.clone();
         let hello = receiver::hello(&conn, Some(inv.token_hex()), &device, move |h| {
-            inner.emit(CoreEvent::JoinStatus(
-                h.message.clone().unwrap_or_else(|| "Waiting for the sender to approve this device…".into()),
-            ));
+            inner.emit(CoreEvent::JoinStatus {
+                message: h.message.clone().unwrap_or_else(|| "Waiting for the sender to approve this device…".into()),
+                safety_words: Some(w2.clone()),
+            });
         })
         .await
         .map_err(je)?;
@@ -528,7 +537,35 @@ impl Core {
             peer_id: peer_s,
             sender_name: hello.sender_name,
             shares: hello.shares.into_iter().map(|s| RemoteShareDto { id: s.id, name: s.name }).collect(),
+            safety_words: words,
         })
+    }
+
+    /// Safety words for this device and another, or none for a bad id.
+    fn words_with(&self, peer_id: &str) -> Vec<String> {
+        peer_id
+            .parse::<EndpointId>()
+            .map(|p| words::safety_words(self.inner.endpoint.id().as_bytes(), p.as_bytes()))
+            .unwrap_or_default()
+    }
+
+    // ------------------------------------------------------------------ history
+
+    /// Finished transfers kept on this device, newest first.
+    pub fn list_history(&self, since_ms: i64) -> Result<Vec<HistoryDto>> {
+        let mut rows = self.inner.db.list_history(since_ms)?;
+        let mut cache: std::collections::HashMap<String, Vec<String>> = Default::default();
+        for r in &mut rows {
+            r.safety_words = cache.entry(r.peer_id.clone()).or_insert_with(|| self.words_with(&r.peer_id)).clone();
+        }
+        Ok(rows)
+    }
+
+    pub fn clear_history(&self) -> Result<()> {
+        self.inner.db.prune_history(i64::MAX)?;
+        self.inner.log("info", "Cleared transfer history on this device", None);
+        self.inner.emit(CoreEvent::HistoryChanged);
+        Ok(())
     }
 
     // ------------------------------------------------------------------ remotes (receiver)
@@ -553,6 +590,7 @@ impl Core {
                         message: None,
                     });
                 RemoteDto {
+                    safety_words: self.words_with(&r.peer_id),
                     peer_short: short_peer(&r.peer_id),
                     peer_id: r.peer_id,
                     name: r.name,
@@ -699,6 +737,7 @@ impl Core {
                 created_at: now,
                 updated_at: now,
                 completed_at: None,
+                stats: Default::default(),
             };
             self.inner.db.insert_job(&row)?;
             total += size;
@@ -889,6 +928,15 @@ fn strip_verbatim(p: &Path) -> String {
     }
 }
 
+/// Applies the history retention setting. Returns how many entries went.
+fn prune_history(inner: &Inner) -> usize {
+    let cutoff = inner.settings().history_cutoff(now_ms());
+    if cutoff == i64::MIN {
+        return 0;
+    }
+    inner.db.prune_history(cutoff).unwrap_or(0)
+}
+
 fn network_status(inner: &Inner) -> NetworkStatus {
     let addr = inner.endpoint.addr();
     let relay = addr.relay_urls().next().map(|u| u.to_string());
@@ -929,6 +977,9 @@ async fn ticker(inner: Arc<Inner>) {
             _ = inner.shutdown.cancelled() => return,
         }
         tick += 1;
+        if tick % 7200 == 0 && prune_history(&inner) > 0 {
+            inner.emit(CoreEvent::HistoryChanged);
+        }
         let handles: Vec<_> = inner.jobs.lock().values().cloned().collect();
         for h in handles {
             if h.status() == JobStatus::Downloading {

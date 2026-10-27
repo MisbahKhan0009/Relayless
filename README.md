@@ -4,10 +4,10 @@
 
 # Relayless
 
-**Send huge files straight to another device.**
+**Your files never sit on a server.**
 
-Direct, end-to-end encrypted transfers between Windows and Android.<br />
-No cloud upload, no size limit, and every transfer picks up from the last verified megabyte.
+Direct, end-to-end encrypted transfers between Windows and Android, with a privacy receipt for every file.<br />
+No account, no cloud copy, no size limit, and every transfer picks up from the last verified megabyte.
 
 [![Latest release](https://img.shields.io/github/v/release/MisbahKhan0009/Relayless?display_name=release&style=flat-square&color=1ed760&labelColor=181818&label=release)](https://github.com/MisbahKhan0009/Relayless/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/MisbahKhan0009/Relayless/build.yml?branch=main&style=flat-square&labelColor=181818&label=build)](https://github.com/MisbahKhan0009/Relayless/actions/workflows/build.yml)
@@ -17,6 +17,7 @@ No cloud upload, no size limit, and every transfer picks up from the last verifi
 
 [**Download**](https://github.com/MisbahKhan0009/Relayless/releases/latest) &nbsp;|&nbsp;
 [Website](https://misbahkhan0009.github.io/Relayless/) &nbsp;|&nbsp;
+[Privacy](#privacy-you-can-check) &nbsp;|&nbsp;
 [How it works](#how-it-works) &nbsp;|&nbsp;
 [Architecture](docs/ARCHITECTURE.md) &nbsp;|&nbsp;
 [Contributing](CONTRIBUTING.md)
@@ -28,6 +29,17 @@ No cloud upload, no size limit, and every transfer picks up from the last verifi
 </div>
 
 <br />
+
+## Privacy you can check
+
+Most tools ask you to trust that they are private. Relayless shows you.
+
+- **A receipt for every transfer.** When a file finishes, both devices keep a receipt: the route it took (direct, or how many bytes a relay carried, encrypted), the encryption, how many 1 MiB blocks were verified, a file fingerprint that matches on both sides, and what servers stored. The answer to that last one is always *nothing*.
+- **Safety words.** When a device asks for access, both screens show the same five words derived from the two devices' keys. Read them to each other; matching words mean no one is in the middle.
+- **History that stays home.** A month calendar with a dot for each day (bigger dot, more data), totals per device and per file type, all computed on the device from its own receipts. Keep it for a year, 90 days, 30 days, forever or not at all, with or without file names.
+- **Who sees what.** File names, contents, listings and history exist only on the two devices. The coordination service sees device IDs and IP addresses so the devices can find each other, and nothing else. There is no Relayless server, account or analytics.
+
+<p align="center"><img src="website/assets/screens/desktop-history.webp" alt="History: a month calendar where each day's dot is sized by data moved, with totals per device and per file type" width="100%" /></p>
 
 ## Why Relayless
 
@@ -50,6 +62,9 @@ Sending a 64 GB file across continents usually means uploading it to someone els
 | **Browse before downloading** | Search the shared folder, pick single files or whole folders, and choose where they go. |
 | **Direct-only by default** | The route (direct or relayed) is always visible. In direct-only mode, file data never passes through a relay. |
 | **Source change detection** | If the sender edits the file mid-transfer, Relayless stops instead of mixing two versions, and offers to start over. |
+| **Live speed graph** | Receive and send speed over the last two minutes, with markers for pauses, reconnects and route changes. |
+| **Privacy receipts and history** | A receipt per finished file and a local calendar of what moved, with whom and what kind of files. Never uploaded. |
+| **Safety words** | Five words, identical on both devices, to confirm a new pairing out loud. |
 | **Windows and Android** | Windows 10/11 and Android 7.0+, in any combination. On Android, transfers continue with the screen off. |
 
 ## Screenshots
@@ -58,7 +73,7 @@ Sending a 64 GB file across continents usually means uploading it to someone els
   <tr>
     <td width="33%"><img src="website/assets/screens/phone-home.webp" alt="Android home screen" /></td>
     <td width="33%"><img src="website/assets/screens/phone-browse.webp" alt="Android remote folder browser" /></td>
-    <td width="33%"><img src="website/assets/screens/phone-transfers.webp" alt="Android transfers screen" /></td>
+    <td width="33%"><img src="website/assets/screens/phone-history.webp" alt="Android history calendar" /></td>
   </tr>
   <tr>
     <td colspan="3"><img src="website/assets/screens/desktop-invite.webp" alt="Windows: inviting a device with a QR code and short code" /></td>
@@ -126,6 +141,8 @@ Read more in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Short codes:** stretched with Argon2id; they unlock an encrypted record, so the lookup service never sees the invitation.
 - **Access control:** the sender checks every request. Path traversal, symlinks and junctions that leave the shared folder are refused. Incoming file names are sanitized before anything is written.
 - **Integrity:** each 1 MiB block is verified with BLAKE3 on arrival, and the whole file again before it is finalized.
+- **Safety words:** five words from a 256-word list (40 bits), derived with BLAKE3 from both devices' public keys, sorted, so both sides compute the same words.
+- **Local-only history:** receipts and statistics live in the app's SQLite database on each device, pruned by the retention setting. The receiver sends the sender a receipt over the existing encrypted connection; nothing goes anywhere else.
 
 Found a vulnerability? Please follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
@@ -171,6 +188,7 @@ docs/                        Architecture and protocol notes
 - [x] Direct, encrypted, resumable transfers on Windows and Android
 - [x] Per-megabyte resume and whole-file verification
 - [x] Invitations, short codes and device approval
+- [x] Privacy receipts, safety words, local history and live speed graph
 - [ ] Code-signed Windows installer
 - [ ] macOS and Linux builds
 - [ ] Self-hostable relay and lookup server

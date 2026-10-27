@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { StoreProvider } from "./store";
+import { FlowProvider } from "./flow";
 import "@fontsource-variable/figtree";
 import "./styles.css";
 
@@ -17,7 +18,9 @@ window.addEventListener("keydown", (e) => {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StoreProvider>
-      <App />
+      <FlowProvider>
+        <App />
+      </FlowProvider>
     </StoreProvider>
   </StrictMode>,
 );

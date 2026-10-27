@@ -271,3 +271,18 @@ export function usePhone(): boolean {
   }, []);
   return phone;
 }
+
+/**
+ * Five words both devices derive from their two identities. Matching words
+ * on both screens mean nobody sits in the middle of the connection.
+ */
+export function SafetyWords({ words, compact }: { words: string[]; compact?: boolean }) {
+  if (!words?.length) return null;
+  return (
+    <span className={`words ${compact ? "compact" : ""}`} role="group" aria-label={`Safety words: ${words.join(", ")}`}>
+      {words.map((w, i) => (
+        <span className="word" key={i}>{w}</span>
+      ))}
+    </span>
+  );
+}

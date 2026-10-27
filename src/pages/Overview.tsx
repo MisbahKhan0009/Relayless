@@ -1,11 +1,12 @@
 import { ArrowUpRight, FolderUp, KeyRound, Monitor, Upload as UploadIcon } from "lucide-react";
 import { useMemo } from "react";
-import { bytes, isActive, mbit, speed, ago } from "../format";
+import { bytes, isActive, speed, ago } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, RouteBadge, SectionHeader } from "../ui";
 import { JobRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
 import { StorageAccessNotice } from "../android";
+import { LiveFlow, useFlowActive } from "../flow";
 
 export default function Overview() {
   const { jobs, uploads, remotes, grants, activity, setPage, setConnectOpen, openBrowser } = useStore();
@@ -14,6 +15,7 @@ export default function Overview() {
   const active = list.filter((j) => isActive(j.status) || j.status === "needs_attention");
   const down = list.filter((j) => j.status === "downloading").reduce((s, j) => s + j.speedBps, 0);
   const up = uploads.reduce((s, u) => s + u.bps, 0);
+  const flowActive = useFlowActive();
 
   return (
     <div className="page">
@@ -35,20 +37,7 @@ export default function Overview() {
         </button>
       </div>
 
-      {(down > 0 || up > 0) && (
-        <div className="stats">
-          <div className="stat">
-            <div className="k">Receiving</div>
-            <div className="v">{speed(down)}</div>
-            <div className="s">{down > 0 ? mbit(down) : "Idle"}</div>
-          </div>
-          <div className="stat">
-            <div className="k">Sending</div>
-            <div className="v">{speed(up)}</div>
-            <div className="s">{up > 0 ? mbit(up) : "Idle"}</div>
-          </div>
-        </div>
-      )}
+      {(flowActive || down > 0 || up > 0) && <LiveFlow />}
 
       {uploads.length > 0 && (
         <div>

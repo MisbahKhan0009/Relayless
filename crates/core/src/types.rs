@@ -161,6 +161,7 @@ pub struct GrantDto {
     pub last_seen_at: i64,
     pub connected: bool,
     pub route: RouteInfo,
+    pub safety_words: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -180,6 +181,7 @@ pub struct RemoteDto {
     pub created_at: i64,
     pub last_seen_at: i64,
     pub status: PeerStatus,
+    pub safety_words: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -219,6 +221,7 @@ pub struct AccessRequest {
     pub share_id: String,
     pub share_name: String,
     pub created_at: i64,
+    pub safety_words: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -248,6 +251,31 @@ pub struct JoinResult {
     pub peer_id: String,
     pub sender_name: String,
     pub shares: Vec<RemoteShareDto>,
+    pub safety_words: Vec<String>,
+}
+
+/// A finished transfer as kept in local history, with everything the
+/// privacy receipt shows.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryDto {
+    pub id: String,
+    /// "received" or "sent"
+    pub direction: String,
+    pub peer_id: String,
+    pub peer_name: String,
+    pub name: String,
+    pub ext: String,
+    pub size: u64,
+    pub started_at: i64,
+    pub finished_at: i64,
+    pub active_ms: u64,
+    pub direct_bytes: u64,
+    pub relay_bytes: u64,
+    pub peak_bps: f64,
+    pub blocks: u64,
+    pub fingerprint: String,
+    pub safety_words: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -273,6 +301,11 @@ pub struct Settings {
     pub notifications: bool,
     pub close_to_tray: bool,
     pub onboarded: bool,
+    /// How long finished transfers stay in local history:
+    /// "forever", "365", "90", "30" (days) or "off".
+    pub history_retention: String,
+    /// Keep file names in history. When off, only type and size are kept.
+    pub history_names: bool,
 }
 
 impl Default for Settings {
@@ -291,6 +324,8 @@ impl Default for Settings {
             notifications: true,
             close_to_tray: true,
             onboarded: false,
+            history_retention: "365".into(),
+            history_names: true,
         }
     }
 }
@@ -306,11 +341,25 @@ impl Settings {
         if self.congestion != "cubic" {
             self.congestion = "bbr".into();
         }
+        if !matches!(self.history_retention.as_str(), "forever" | "365" | "90" | "30" | "off") {
+            self.history_retention = "365".into();
+        }
         self.device_name = self.device_name.trim().chars().take(64).collect();
         self
     }
     pub fn direct_only(&self) -> bool {
         self.connection_mode == "direct_only"
+    }
+    pub fn history_on(&self) -> bool {
+        self.history_retention != "off"
+    }
+    /// Oldest finish time to keep, in ms since the epoch.
+    pub fn history_cutoff(&self, now_ms: i64) -> i64 {
+        match self.history_retention.parse::<i64>() {
+            Ok(days) => now_ms - days * 86_400_000,
+            Err(_) if self.history_retention == "off" => i64::MAX,
+            Err(_) => i64::MIN,
+        }
     }
 }
 
@@ -329,7 +378,8 @@ pub struct UploadDto {
 #[derive(Clone, Debug)]
 pub enum CoreEvent {
     Uploads(Vec<UploadDto>),
-    JoinStatus(String),
+    JoinStatus { message: String, safety_words: Option<Vec<String>> },
+    HistoryChanged,
     JobUpdated(JobSnapshot),
     JobRemoved(String),
     PeerStatus(PeerStatus),
@@ -348,7 +398,8 @@ impl CoreEvent {
     pub fn name(&self) -> &'static str {
         match self {
             CoreEvent::Uploads(_) => "uploads",
-            CoreEvent::JoinStatus(_) => "join-status",
+            CoreEvent::JoinStatus { .. } => "join-status",
+            CoreEvent::HistoryChanged => "history-changed",
             CoreEvent::JobUpdated(_) => "job-updated",
             CoreEvent::JobRemoved(_) => "job-removed",
             CoreEvent::PeerStatus(_) => "peer-status",
@@ -368,13 +419,18 @@ impl CoreEvent {
         use serde_json::json;
         match self {
             CoreEvent::Uploads(u) => serde_json::to_value(u).unwrap_or_default(),
-            CoreEvent::JoinStatus(m) => json!({ "message": m }),
+            CoreEvent::JoinStatus { message, safety_words } => {
+                json!({ "message": message, "safetyWords": safety_words })
+            }
             CoreEvent::JobUpdated(j) => serde_json::to_value(j).unwrap_or_default(),
             CoreEvent::JobRemoved(id) => json!({ "id": id }),
             CoreEvent::PeerStatus(p) => serde_json::to_value(p).unwrap_or_default(),
             CoreEvent::AccessRequested(r) => serde_json::to_value(r).unwrap_or_default(),
             CoreEvent::AccessResolved(id) => json!({ "id": id }),
-            CoreEvent::SharesChanged | CoreEvent::RemotesChanged | CoreEvent::GrantsChanged => {
+            CoreEvent::SharesChanged
+            | CoreEvent::RemotesChanged
+            | CoreEvent::GrantsChanged
+            | CoreEvent::HistoryChanged => {
                 json!({})
             }
             CoreEvent::Activity(a) => serde_json::to_value(a).unwrap_or_default(),

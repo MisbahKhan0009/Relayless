@@ -8,7 +8,7 @@ use anyhow::Result;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::types::{ActivityDto, JobStatus, Settings};
+use crate::types::{ActivityDto, HistoryDto, JobStatus, Settings};
 use crate::util::now_ms;
 
 pub struct Db {
@@ -88,6 +88,35 @@ pub struct JobRow {
     pub created_at: i64,
     pub updated_at: i64,
     pub completed_at: Option<i64>,
+    pub stats: JobStats,
+}
+
+/// Per-job route and timing counters, kept for the privacy receipt.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JobStats {
+    pub direct_bytes: u64,
+    pub relay_bytes: u64,
+    pub active_ms: u64,
+    pub peak_bps: f64,
+}
+
+/// One finished transfer, sent or received. Lives only on this device.
+#[derive(Clone, Debug)]
+pub struct HistoryRow {
+    pub id: String,
+    /// "received" or "sent"
+    pub direction: String,
+    pub peer_id: String,
+    pub peer_name: String,
+    /// Empty when the user chose not to keep file names.
+    pub name: String,
+    pub ext: String,
+    pub size: u64,
+    pub started_at: i64,
+    pub finished_at: i64,
+    pub stats: JobStats,
+    pub blocks: u64,
+    pub fingerprint: String,
 }
 
 const SCHEMA_V1: &str = r#"
@@ -131,6 +160,20 @@ CREATE TABLE IF NOT EXISTS partials(
   PRIMARY KEY(job_id, idx)) WITHOUT ROWID;
 "#;
 
+const SCHEMA_V3: &str = r#"
+ALTER TABLE jobs ADD COLUMN direct_bytes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN relay_bytes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN active_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN peak_bps REAL NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS history(
+  id TEXT PRIMARY KEY, direction TEXT NOT NULL, peer_id TEXT NOT NULL, peer_name TEXT NOT NULL,
+  name TEXT NOT NULL, ext TEXT NOT NULL, size INTEGER NOT NULL,
+  started_at INTEGER NOT NULL, finished_at INTEGER NOT NULL, active_ms INTEGER NOT NULL,
+  direct_bytes INTEGER NOT NULL, relay_bytes INTEGER NOT NULL, peak_bps REAL NOT NULL,
+  blocks INTEGER NOT NULL, fingerprint TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS history_finished ON history(finished_at);
+"#;
+
 /// Verified prefix of a chunk: (chunk index, bytes done, block hashes).
 pub type Partial = (u64, u64, Vec<[u8; 32]>);
 
@@ -162,6 +205,10 @@ impl Db {
         if version < 2 {
             conn.execute_batch(SCHEMA_V2)?;
             conn.pragma_update(None, "user_version", 2)?;
+        }
+        if version < 3 {
+            conn.execute_batch(SCHEMA_V3)?;
+            conn.pragma_update(None, "user_version", 3)?;
         }
         Ok(Db { conn: Mutex::new(conn) })
     }
@@ -444,8 +491,9 @@ impl Db {
     pub fn insert_job(&self, j: &JobRow) -> Result<()> {
         self.conn.lock().execute(
             "INSERT INTO jobs(id,peer_id,share_id,remote_path,display_name,size,mtime_ms,chunk_size,total_chunks,
-              dest_path,temp_path,verified_bytes,status,error,created_at,updated_at,completed_at)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+              dest_path,temp_path,verified_bytes,status,error,created_at,updated_at,completed_at,
+              direct_bytes,relay_bytes,active_ms,peak_bps)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
             params![
                 j.id,
                 j.peer_id,
@@ -463,7 +511,11 @@ impl Db {
                 j.error,
                 j.created_at,
                 j.updated_at,
-                j.completed_at
+                j.completed_at,
+                j.stats.direct_bytes as i64,
+                j.stats.relay_bytes as i64,
+                j.stats.active_ms as i64,
+                j.stats.peak_bps
             ],
         )?;
         Ok(())
@@ -490,11 +542,18 @@ impl Db {
             created_at: r.get(14)?,
             updated_at: r.get(15)?,
             completed_at: r.get(16)?,
+            stats: JobStats {
+                direct_bytes: r.get::<_, i64>(17)? as u64,
+                relay_bytes: r.get::<_, i64>(18)? as u64,
+                active_ms: r.get::<_, i64>(19)? as u64,
+                peak_bps: r.get(20)?,
+            },
         })
     }
 
     const JOB_COLS: &'static str = "id,peer_id,share_id,remote_path,display_name,size,mtime_ms,chunk_size,total_chunks,
-        dest_path,temp_path,verified_bytes,status,error,created_at,updated_at,completed_at";
+        dest_path,temp_path,verified_bytes,status,error,created_at,updated_at,completed_at,
+        direct_bytes,relay_bytes,active_ms,peak_bps";
 
     pub fn get_job(&self, id: &str) -> Result<Option<JobRow>> {
         let c = self.conn.lock();
@@ -540,7 +599,8 @@ impl Db {
         let mut c = self.conn.lock();
         let tx = c.transaction()?;
         tx.execute(
-            "UPDATE jobs SET size=?2, mtime_ms=?3, total_chunks=?4, verified_bytes=0, status='queued', error=NULL, updated_at=?5 WHERE id=?1",
+            "UPDATE jobs SET size=?2, mtime_ms=?3, total_chunks=?4, verified_bytes=0, status='queued', error=NULL, updated_at=?5,
+               direct_bytes=0, relay_bytes=0, active_ms=0, peak_bps=0 WHERE id=?1",
             params![id, size as i64, mtime_ms, total_chunks as i64, now_ms()],
         )?;
         tx.execute("DELETE FROM chunks WHERE job_id=?1", params![id])?;
@@ -600,6 +660,7 @@ impl Db {
         done: &[(u64, [u8; 32])],
         partials: &[Partial],
         verified_bytes: u64,
+        stats: &JobStats,
     ) -> Result<()> {
         let mut c = self.conn.lock();
         let tx = c.transaction()?;
@@ -622,11 +683,112 @@ impl Db {
             }
         }
         tx.execute(
-            "UPDATE jobs SET verified_bytes=?2, updated_at=?3 WHERE id=?1",
-            params![job_id, verified_bytes as i64, now_ms()],
+            "UPDATE jobs SET verified_bytes=?2, updated_at=?3, direct_bytes=?4, relay_bytes=?5, active_ms=?6, peak_bps=?7 WHERE id=?1",
+            params![
+                job_id,
+                verified_bytes as i64,
+                now_ms(),
+                stats.direct_bytes as i64,
+                stats.relay_bytes as i64,
+                stats.active_ms as i64,
+                stats.peak_bps
+            ],
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn save_job_stats(&self, job_id: &str, stats: &JobStats) -> Result<()> {
+        self.conn.lock().execute(
+            "UPDATE jobs SET direct_bytes=?2, relay_bytes=?3, active_ms=?4, peak_bps=?5 WHERE id=?1",
+            params![
+                job_id,
+                stats.direct_bytes as i64,
+                stats.relay_bytes as i64,
+                stats.active_ms as i64,
+                stats.peak_bps
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Fingerprint of a finished file: BLAKE3 over its chunk hashes, in order.
+    pub fn file_fingerprint(&self, job_id: &str) -> Result<String> {
+        let mut h = blake3::Hasher::new();
+        h.update(b"relayless-file-v1");
+        for (_, hash, _) in self.verified_chunks(job_id)? {
+            h.update(&hash);
+        }
+        Ok(h.finalize().to_hex().to_string())
+    }
+
+    // ---------------------------------------------------------------- history
+
+    /// Records a finished transfer. Ignores duplicates.
+    pub fn insert_history(&self, h: &HistoryRow) -> Result<()> {
+        self.conn.lock().execute(
+            "INSERT OR IGNORE INTO history(id,direction,peer_id,peer_name,name,ext,size,started_at,finished_at,
+               active_ms,direct_bytes,relay_bytes,peak_bps,blocks,fingerprint)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+            params![
+                h.id,
+                h.direction,
+                h.peer_id,
+                h.peer_name,
+                h.name,
+                h.ext,
+                h.size as i64,
+                h.started_at,
+                h.finished_at,
+                h.stats.active_ms as i64,
+                h.stats.direct_bytes as i64,
+                h.stats.relay_bytes as i64,
+                h.stats.peak_bps,
+                h.blocks as i64,
+                h.fingerprint
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_history(&self, since_ms: i64) -> Result<Vec<HistoryDto>> {
+        let c = self.conn.lock();
+        let mut st = c.prepare(
+            "SELECT id,direction,peer_id,peer_name,name,ext,size,started_at,finished_at,active_ms,
+               direct_bytes,relay_bytes,peak_bps,blocks,fingerprint
+             FROM history WHERE finished_at >= ?1 ORDER BY finished_at DESC",
+        )?;
+        let rows = st
+            .query_map(params![since_ms], |r| {
+                Ok(HistoryDto {
+                    id: r.get(0)?,
+                    direction: r.get(1)?,
+                    peer_id: r.get(2)?,
+                    peer_name: r.get(3)?,
+                    name: r.get(4)?,
+                    ext: r.get(5)?,
+                    size: r.get::<_, i64>(6)? as u64,
+                    started_at: r.get(7)?,
+                    finished_at: r.get(8)?,
+                    active_ms: r.get::<_, i64>(9)? as u64,
+                    direct_bytes: r.get::<_, i64>(10)? as u64,
+                    relay_bytes: r.get::<_, i64>(11)? as u64,
+                    peak_bps: r.get(12)?,
+                    blocks: r.get::<_, i64>(13)? as u64,
+                    fingerprint: r.get(14)?,
+                    safety_words: Vec::new(),
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Deletes history older than `cutoff_ms` (everything when `cutoff_ms` is `i64::MAX`).
+    pub fn prune_history(&self, cutoff_ms: i64) -> Result<usize> {
+        Ok(self
+            .conn
+            .lock()
+            .execute("DELETE FROM history WHERE finished_at < ?1", params![cutoff_ms])?)
     }
 
     pub fn remove_chunks(&self, job_id: &str, idxs: &[u64], verified_bytes: u64) -> Result<()> {

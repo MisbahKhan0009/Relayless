@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   ArrowDownUp,
+  CalendarDays,
   CheckCircle2,
   FolderOpen,
   FolderUp,
@@ -24,6 +25,7 @@ import Shares from "./pages/Shares";
 import Devices from "./pages/Devices";
 import Browser from "./pages/Browser";
 import Activity from "./pages/Activity";
+import History from "./pages/History";
 import Settings from "./pages/Settings";
 
 const TITLES: Record<Page, string> = {
@@ -32,6 +34,7 @@ const TITLES: Record<Page, string> = {
   devices: "Remote devices",
   browse: "Browse",
   transfers: "Transfers",
+  history: "History",
   activity: "Activity",
   settings: "Settings",
 };
@@ -59,6 +62,7 @@ export default function App() {
     { id: "shares", label: "Shared folders", short: "Shared", icon: <FolderUp size={17} />, count: s.shares.length || undefined },
     { id: "devices", label: "Remote devices", short: "Devices", icon: <Monitor size={17} />, count: s.remotes.length || undefined },
     { id: "transfers", label: "Transfers", short: "Transfers", icon: <ArrowDownUp size={17} />, count: attention || activeCount || undefined, hot: activeCount > 0, alert: attention > 0 },
+    { id: "history", label: "History", short: "History", icon: <CalendarDays size={17} /> },
     { id: "activity", label: "Activity", short: "Activity", icon: <ListChecks size={17} /> },
     { id: "settings", label: "Settings", short: "Settings", icon: <SettingsIcon size={17} /> },
   ];
@@ -76,6 +80,8 @@ export default function App() {
         return <Browser />;
       case "transfers":
         return <Transfers />;
+      case "history":
+        return <History />;
       case "activity":
         return <Activity />;
       case "settings":

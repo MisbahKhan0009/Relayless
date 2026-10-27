@@ -5,6 +5,7 @@ import {
   type AccessRequest,
   type Activity,
   type Grant,
+  type HistoryEntry,
   type Job,
   type NetworkStatus,
   type PeerStatus,
@@ -15,7 +16,7 @@ import {
 } from "./api";
 import { setPlatform } from "./platform";
 
-export type Page = "overview" | "shares" | "devices" | "browse" | "transfers" | "activity" | "settings";
+export type Page = "overview" | "shares" | "devices" | "browse" | "transfers" | "history" | "activity" | "settings";
 
 export interface BrowseTarget {
   peerId: string;
@@ -43,6 +44,7 @@ interface Store {
   uploads: Upload[];
   pending: AccessRequest[];
   activity: Activity[];
+  history: HistoryEntry[];
   integrity: Record<string, { checked: number; total: number }>;
   page: Page;
   browse: BrowseTarget | null;
@@ -57,6 +59,7 @@ interface Store {
   refreshGrants: () => void;
   refreshRemotes: () => void;
   refreshJobs: () => void;
+  refreshHistory: () => void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -91,6 +94,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [pending, setPending] = useState<AccessRequest[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [integrity, setIntegrity] = useState<Record<string, { checked: number; total: number }>>({});
   const [page, setPage] = useState<Page>("overview");
   const [browse, setBrowse] = useState<BrowseTarget | null>(null);
@@ -106,6 +110,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refreshShares = useDebounced(() => api.listShares().then(setShares).catch(() => {}));
   const refreshGrants = useDebounced(() => api.listGrants().then(setGrants).catch(() => {}));
   const refreshRemotes = useDebounced(() => api.listRemotes().then(setRemotes).catch(() => {}));
+  const refreshHistory = useDebounced(() => api.listHistory(0).then(setHistory).catch(() => {}), 400);
   const refreshJobs = useDebounced(() =>
     api
       .listJobs()
@@ -134,6 +139,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     sub("shares-changed", () => refreshShares());
     sub("grants-changed", () => refreshGrants());
     sub("remotes-changed", () => refreshRemotes());
+    sub("history-changed", () => refreshHistory());
     sub<Activity>("activity", (a) => setActivity((l) => [a, ...l].slice(0, 300)));
     sub<NetworkStatus>("network-status", setNetwork);
     sub<Upload[]>("uploads", setUploads);
@@ -163,6 +169,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setJobs(Object.fromEntries(j.map((x) => [x.id, x])));
         setPending(p);
         setActivity(a);
+        api.listHistory(0).then(setHistory).catch(() => {});
       } finally {
         setReady(true);
       }
@@ -171,7 +178,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       disposed = true;
       unlisten.forEach((u) => u());
     };
-  }, [refreshShares, refreshGrants, refreshRemotes]);
+  }, [refreshShares, refreshGrants, refreshRemotes, refreshHistory]);
 
   const saveSettings = useCallback(async (s: Settings) => {
     const out = await api.updateSettings(s);
@@ -197,6 +204,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       uploads,
       pending,
       activity,
+      history,
       integrity,
       page,
       browse,
@@ -211,8 +219,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refreshGrants,
       refreshRemotes,
       refreshJobs,
+      refreshHistory,
     }),
-    [ready, version, dataDir, settings, network, shares, grants, remotes, jobs, uploads, pending, activity, integrity, page, browse, toasts, connectOpen, openBrowser, toast, saveSettings, refreshShares, refreshGrants, refreshRemotes, refreshJobs],
+    [ready, version, dataDir, settings, network, shares, grants, remotes, jobs, uploads, pending, activity, history, integrity, page, browse, toasts, connectOpen, openBrowser, toast, saveSettings, refreshShares, refreshGrants, refreshRemotes, refreshJobs, refreshHistory],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
