@@ -13,21 +13,21 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 tokio-util = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 blake3 = "1.8"
-rand = "0.9"
+rand = "0.10"
 data-encoding = "2"
 anyhow = "1"
 thiserror = "2"
 tracing = "0.1"
-argon2 = "0.5"
-chacha20poly1305 = "0.10"
-fs4 = { version = "0.13", features = ["sync"] }
+argon2 = "0.6"
+chacha20poly1305 = "0.11"
+fs4 = { version = "1.1", features = ["sync"] }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Threading", "Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"
