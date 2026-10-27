@@ -126,7 +126,7 @@ jobs:
           }
           Write-Host "::notice title=Smoke test passed::$summary"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Relayless-Windows-installer
           path: |
@@ -281,7 +281,7 @@ jobs:
             sleep 45
             bash .github/scripts/android-smoke.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Relayless-Android-APK
           path: out/*
