@@ -53,9 +53,11 @@ CI runs the same tests on Linux and Windows and builds and launches both apps.
 - **Transfer logic lives in `crates/core`.** The interface only calls commands and renders events.
 - **Never trust the network.** Validate every length, offset, index and path from a peer, and keep sender-side authorization on every request.
 - **Never claim progress that isn't on disk.** Data is flushed before progress is recorded; keep it that way.
-- **Protocol changes** need a `PROTOCOL_VERSION` bump in `crates/core/src/proto.rs` and an update to [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- **Protocol changes** that older peers can't handle need a `PROTOCOL_VERSION` bump in `crates/core/src/proto.rs`. A new request that older peers can safely reject (like `Receipt`) doesn't. Either way, update [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- **Privacy is the product.** Nothing about files, devices or history may leave the two devices except inside their encrypted connection. No analytics, no crash reporting to third parties, no new network calls without an issue first. If a feature records something, it goes in local history and follows the retention setting.
 - **Database changes** need a new schema version and a migration in `crates/core/src/db.rs`; existing installs must keep their downloads.
-- **Interface copy** is plain and specific: say what happened and what the user can do, in sentence case.
+- **Interface copy** is plain and specific: say what happened and what the user can do, in sentence case. Privacy claims must be checkable in the app (a receipt, a setting, a route badge), never just a slogan.
+- **Design:** read [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md) before UI work. Chart colours are fixed there (received green, sent violet); text never takes a series colour.
 - **Tests:** engine changes should come with an end-to-end test in `crates/core/tests/e2e.rs` where practical.
 
 ## Releases

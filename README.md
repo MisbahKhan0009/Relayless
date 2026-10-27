@@ -114,6 +114,7 @@ sequenceDiagram
     N-->>R: Sender's current addresses
     R->>S: QUIC + TLS 1.3 handshake, NAT hole punching
     Note over S,R: Direct, end-to-end encrypted connection
+    Note over S,R: Both screens show the same five safety words
     S->>S: Approve the new device
     loop Each chunk, several in parallel
         R->>S: Request chunk N from byte offset
@@ -121,9 +122,12 @@ sequenceDiagram
         R->>R: Verify, write, save progress every 2 s
     end
     R->>R: Re-verify the whole file, rename it
+    R->>R: Save a privacy receipt in local history
+    R->>S: Receipt (fingerprint, route, timing)
+    S->>S: Save the matching receipt
 ```
 
-The lookup and relay servers (run by the [iroh](https://iroh.computer) project) only help the two devices find each other and punch through routers. They never see file names or contents. In the default **direct-only** mode, no file data passes through a relay at all; if your network blocks direct paths, you can allow encrypted relay fallback in Settings.
+The lookup and relay servers (run by the [iroh](https://iroh.computer) project) only help the two devices find each other and punch through routers. They never see file names, contents or your history; receipts travel only between the two devices, inside the encrypted connection. In the default **direct-only** mode, no file data passes through a relay at all; if your network blocks direct paths, you can allow encrypted relay fallback in Settings.
 
 Read more in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -178,9 +182,13 @@ src-tauri/                   App shell (Tauri 2): commands, events, Windows tray
                              Android project in gen/android
 plugins/relayless-android/   Android integration (Kotlin): storage access,
                              foreground transfer service, battery settings
-src/                         Interface (React + TypeScript)
+src/                         Interface (React + TypeScript): pages, live speed
+                             graph (flow.tsx), History calendar and receipts
+mock/                        Demo backend for `npm run dev:ui`
 website/                     Project website, published to GitHub Pages
 docs/                        Architecture and protocol notes
+PRODUCT.md                   Who Relayless is for and the principles it keeps
+DESIGN.md                    Visual system: colours, type, chart and calendar rules
 ```
 
 ## Roadmap
