@@ -33,10 +33,10 @@ android {
             }
         }
     }
-    namespace = "io.github.misbahkhan0009.relayless"
+    namespace = "app.relayless"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "io.github.misbahkhan0009.relayless"
+        applicationId = "app.relayless"
         minSdk = 26
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

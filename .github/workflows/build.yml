@@ -193,7 +193,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.relayless-signing
-          key: relayless-signing-key-v2
+          key: relayless-signing-key-v1
 
       - name: Signing key
         shell: bash
@@ -259,7 +259,7 @@ jobs:
           script: |
             adb install -r ${{ steps.apk.outputs.apk }}
             adb logcat -c
-            adb shell monkey -p io.github.misbahkhan0009.relayless -c android.intent.category.LAUNCHER 1
+            adb shell monkey -p app.relayless -c android.intent.category.LAUNCHER 1
             sleep 45
             bash .github/scripts/android-smoke.sh
 
