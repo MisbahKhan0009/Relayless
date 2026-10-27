@@ -42,7 +42,7 @@ jobs:
     name: Core tests (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -55,9 +55,9 @@ jobs:
     name: Windows installer
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -126,7 +126,7 @@ jobs:
           }
           Write-Host "::notice title=Smoke test passed::$summary"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Relayless-Windows-installer
           path: |
@@ -136,7 +136,7 @@ jobs:
 
       - name: Publish GitHub release
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v0.1.0-build${{ github.run_number }}
           name: Relayless 0.1.0 (build ${{ github.run_number }})
@@ -150,14 +150,14 @@ jobs:
     name: Android APK
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -208,7 +208,7 @@ jobs:
         run: npm ci
 
       # Keep the same signing key across runs so new builds install over old ones.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.relayless-signing
           key: relayless-signing-key-v1
@@ -281,7 +281,7 @@ jobs:
             sleep 45
             bash .github/scripts/android-smoke.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Relayless-Android-APK
           path: out/*
@@ -289,7 +289,7 @@ jobs:
 
       - name: Publish GitHub release
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v0.1.0-build${{ github.run_number }}
           name: Relayless 0.1.0 (build ${{ github.run_number }})
