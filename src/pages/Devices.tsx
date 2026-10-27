@@ -103,13 +103,13 @@ export default function Devices() {
       <div className="two-col">
         <div className="notice">
           <Zap size={16} style={{ color: "var(--ok)" }} />
-          <span><b>Direct</b> means data flows straight between the two computers. This is the fastest path and the only one used in direct-only mode.</span>
+          <span><b>Direct</b> means data flows straight between the two computers. This is the fastest path and always tried first.</span>
         </div>
         <div className="notice">
           <Waypoints size={16} style={{ color: "var(--warn)" }} />
           <span>
             <b>Relayed</b> means a public relay forwards encrypted packets because routers blocked a direct path.{" "}
-            {settings?.connectionMode === "direct_only" ? "Direct-only mode is on, so file data waits for a direct path." : "Relay fallback is allowed in your settings."}
+            {settings?.connectionMode === "direct_only" ? "Direct-only mode is on, so file data waits for a direct path." : "Relayless uses it only when no direct path opens within a few seconds, and switches to direct as soon as one does."}
           </span>
         </div>
       </div>

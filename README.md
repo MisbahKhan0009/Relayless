@@ -60,7 +60,7 @@ Sending a 64 GB file across continents usually means uploading it to someone els
 | **Share exactly one folder** | The sender chooses a folder; nothing outside it can be listed or read. Receivers can't change or delete anything. |
 | **Invitations and short codes** | Share an invitation in any chat app, or read out a 12-character code. New devices need your approval. |
 | **Browse before downloading** | Search the shared folder, pick single files or whole folders, and choose where they go. |
-| **Direct-only by default** | The route (direct or relayed) is always visible. In direct-only mode, file data never passes through a relay. |
+| **Direct first** | A direct path is always tried first; if routers block it, an end-to-end encrypted relay carries the data until a direct path opens. The route is always visible, and Direct only is one setting away. |
 | **Source change detection** | If the sender edits the file mid-transfer, Relayless stops instead of mixing two versions, and offers to start over. |
 | **Live speed graph** | Receive and send speed over the last two minutes, with markers for pauses, reconnects and route changes. |
 | **Privacy receipts and history** | A receipt per finished file and a local calendar of what moved, with whom and what kind of files. Never uploaded. |
@@ -127,7 +127,7 @@ sequenceDiagram
     S->>S: Save the matching receipt
 ```
 
-The lookup and relay servers (run by the [iroh](https://iroh.computer) project) only help the two devices find each other and punch through routers. They never see file names, contents or your history; receipts travel only between the two devices, inside the encrypted connection. In the default **direct-only** mode, no file data passes through a relay at all; if your network blocks direct paths, you can allow encrypted relay fallback in Settings.
+The lookup and relay servers (run by the [iroh](https://iroh.computer) project) only help the two devices find each other and punch through routers. They never see file names, contents or your history; receipts travel only between the two devices, inside the encrypted connection. By default Relayless tries a direct path for about 15 seconds and then, if routers block it (common on mobile data), continues through a relay that forwards end-to-end encrypted packets it can't read. It moves to a direct path as soon as one opens, and the receipt records how many bytes were relayed. **Direct only** in Settings keeps all file data off relays.
 
 Read more in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

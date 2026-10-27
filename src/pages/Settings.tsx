@@ -204,8 +204,8 @@ export default function Settings() {
             label="Route mode"
             hint={
               settings.connectionMode === "direct_only"
-                ? "File data only flows over a verified direct path. If routers block it, transfers wait instead of using a relay."
-                : "Prefer direct. If no direct path opens, encrypted data may pass through a public relay (slower, but works behind strict NAT)."
+                ? "File data only flows over a direct path. If routers block one (common on mobile data), transfers wait at 0 instead of using a relay."
+                : "Tries a direct path first. If none opens within about 15 seconds, data goes through a public relay, still end-to-end encrypted: the relay can't read or keep it. Switches to direct as soon as possible."
             }
           >
             <Segmented
@@ -213,8 +213,8 @@ export default function Settings() {
               value={settings.connectionMode}
               onChange={(v) => save({ connectionMode: v })}
               options={[
+                { value: "allow_relay", label: "Direct first (recommended)" },
                 { value: "direct_only", label: "Direct only" },
-                { value: "allow_relay", label: "Allow relay fallback" },
               ]}
             />
           </Row>

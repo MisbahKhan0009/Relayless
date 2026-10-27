@@ -78,6 +78,13 @@ impl Core {
         std::fs::create_dir_all(&opts.data_dir)?;
         let db = Db::open(&opts.data_dir.join("relayless.db"))?;
         let mut settings = db.load_settings().unwrap_or_default();
+        if !settings.route_v2 {
+            // Direct-only used to be the default, which leaves transfers stuck
+            // at 0 when routers block a direct path. Move to direct-first with
+            // encrypted relay fallback once; users can switch back in Settings.
+            settings.connection_mode = "allow_relay".into();
+            settings.route_v2 = true;
+        }
         if settings.device_name.trim().is_empty() {
             settings.device_name = opts.default_device_name.clone();
         }

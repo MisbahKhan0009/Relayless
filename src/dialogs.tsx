@@ -361,7 +361,7 @@ export function Onboarding() {
         </div>
         <div className="onboard-point">
           <span className="i"><Waypoints size={16} /></span>
-          <span><b>A small coordination service helps you find each other</b><span className="muted">Public iroh relays and DNS exchange connection details so the two PCs can punch through routers. In direct-only mode (the default) no file data ever passes through them.</span></span>
+          <span><b>A small coordination service helps you find each other</b><span className="muted">Public iroh relays and DNS exchange connection details so the two devices can punch through routers. If a router blocks a direct path, a relay forwards the end-to-end encrypted data; it can't read or keep it, and the receipt shows how much went that way. You can choose direct only in Settings.</span></span>
         </div>
         <div className="onboard-point">
           <span className="i"><ShieldCheck size={16} /></span>

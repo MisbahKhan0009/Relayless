@@ -28,7 +28,7 @@ function explain(job: Job): string | null {
     case "reconnecting":
       return "The connection dropped. Every verified piece is saved on disk, so only the missing pieces will be fetched again.";
     case "waiting_direct":
-      return "Only a relayed path is available and direct-only mode is on, so no file data is being sent. Relayless keeps trying to open a direct path. You can allow relay fallback in Settings.";
+      return "The routers between you block a direct path and direct-only mode is on, so no file data is sent. Relayless keeps trying. To continue now, choose Direct first in Settings on both devices; data then goes through an end-to-end encrypted relay.";
     case "paused":
       return job.verifiedBytes > 0 ? "Resume continues from the verified progress below; nothing already downloaded is fetched again." : null;
     case "needs_attention":

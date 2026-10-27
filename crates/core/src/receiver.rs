@@ -40,6 +40,13 @@ use crate::util::{
 const BLOCK: usize = crate::proto::BLOCK as usize;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
+/// A chunk stream is only considered stalled when no bytes at all arrive for
+/// this long. Slow links (a busy mobile uplink, a relay) can take minutes per
+/// 1 MiB block when it is shared by many streams; that is slow, not stuck.
+const STALL_TIMEOUT: Duration = Duration::from_secs(90);
+/// How long to wait for a direct path before using the encrypted relay
+/// (relay fallback mode).
+const DIRECT_GRACE: Duration = Duration::from_secs(15);
 const COMMIT_INTERVAL: Duration = Duration::from_secs(2);
 
 // ====================================================================== errors
@@ -331,6 +338,8 @@ pub struct JobHandle {
     pub peer_name: String,
     pub verified: AtomicU64,
     pub inflight: AtomicU64,
+    /// Bytes received for blocks that are still arriving (not yet verified).
+    pub arriving: AtomicU64,
     pub verified_chunks: AtomicU64,
     speed: Mutex<SpeedState>,
     /// Bytes received over a direct path and through a relay.
@@ -344,7 +353,7 @@ pub struct JobHandle {
 
 impl JobHandle {
     pub fn done_bytes(&self) -> u64 {
-        self.verified.load(Ordering::Relaxed) + self.inflight.load(Ordering::Relaxed)
+        self.verified.load(Ordering::Relaxed) + self.inflight.load(Ordering::Relaxed) + self.arriving.load(Ordering::Relaxed)
     }
 
     /// Updates the smoothed speed estimate; returns (bytes/s, eta).
@@ -513,6 +522,7 @@ pub fn spawn_job(inner: &Arc<Inner>, job_id: &str) {
         stop: Mutex::new(None),
         verified: AtomicU64::new(row.verified_bytes),
         inflight: AtomicU64::new(0),
+        arriving: AtomicU64::new(0),
         verified_chunks: AtomicU64::new(verified_chunks),
         speed: Mutex::new(SpeedState { last_bytes: row.verified_bytes, last_at: Instant::now(), ema: 0.0, samples: 0 }),
         direct_bytes: AtomicU64::new(row.stats.direct_bytes),
@@ -589,6 +599,26 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
                 continue;
             }
         };
+
+        // Relay fallback: give hole punching a moment to find a direct path
+        // first; after that, carry on over the encrypted relay.
+        if !inner.settings.read().direct_only() && attempt == 0 {
+            let pc = peer_conn(inner, peer);
+            let mut rx = pc.route.subscribe();
+            if !rx.borrow().is_direct() {
+                let wait = tokio::time::timeout(DIRECT_GRACE, async {
+                    loop {
+                        if rx.borrow().is_direct() || rx.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                });
+                tokio::select! {
+                    _ = wait => {}
+                    _ = h.cancel.cancelled() => return,
+                }
+            }
+        }
 
         // Honour direct-only mode before sending any file bytes.
         if inner.settings.read().direct_only() {
@@ -761,6 +791,7 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
     h.verified.store(verified_bytes, Ordering::Relaxed);
     h.verified_chunks.store(verified.len() as u64, Ordering::Relaxed);
     h.inflight.store(0, Ordering::Relaxed);
+    h.arriving.store(0, Ordering::Relaxed);
     // Finish part-done chunks first, then the rest in order.
     let mut missing: VecDeque<u64> = saved.iter().map(|(i, _, _)| *i).collect();
     missing.extend((0..row.total_chunks).filter(|i| !verified.contains(i) && !saved.iter().any(|(p, _, _)| p == i)));
@@ -927,15 +958,40 @@ async fn fetch_chunk(
     let mut buf = vec![0u8; BLOCK];
     let mut want = [0u8; 32];
     let mut blocks = 0u32;
+    // Bytes of the current block counted in `h.arriving`; removed again on
+    // every exit path so the counter never drifts.
+    struct Arriving<'a>(&'a AtomicU64, u64);
+    impl Drop for Arriving<'_> {
+        fn drop(&mut self) {
+            let n = self.1;
+            let _ = self.0.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v.saturating_sub(n)));
+        }
+    }
     while done < len {
         let n = ((len - done) as usize).min(BLOCK);
         inner.download_limiter.acquire(n).await;
+        let mut arriving = Arriving(&h.arriving, 0);
+        let mut got = 0usize;
+        while got < n {
+            let r = tokio::select! {
+                r = tokio::time::timeout(STALL_TIMEOUT, recv.read(&mut buf[got..n])) => r,
+                _ = cancel.cancelled() => {
+                    let _ = recv.stop(VarInt::from_u32(0));
+                    return Err(JobError::Stopped.into());
+                }
+            };
+            match r.map_err(|_| JobError::Network("No data arrived for 90 seconds.".into()))?.map_err(net)? {
+                Some(k) => {
+                    got += k;
+                    arriving.1 += k as u64;
+                    h.arriving.fetch_add(k as u64, Ordering::Relaxed);
+                }
+                None => return Err(JobError::Network("The sender closed the stream early.".into()).into()),
+            }
+        }
         tokio::select! {
-            r = tokio::time::timeout(READ_TIMEOUT, async {
-                recv.read_exact(&mut buf[..n]).await?;
-                recv.read_exact(&mut want).await
-            }) => {
-                r.map_err(|_| JobError::Network("The transfer stalled.".into()))?.map_err(net)?;
+            r = tokio::time::timeout(STALL_TIMEOUT, recv.read_exact(&mut want)) => {
+                r.map_err(|_| JobError::Network("No data arrived for 90 seconds.".into()))?.map_err(net)?;
             }
             _ = cancel.cancelled() => {
                 let _ = recv.stop(VarInt::from_u32(0));
@@ -960,7 +1016,9 @@ async fn fetch_chunk(
         }
         done += n as u64;
         hashes.push(want);
+        // Move the block from "arriving" to "verified, waiting to be saved".
         h.inflight.fetch_add(n as u64, Ordering::Relaxed);
+        drop(arriving);
         if pc.route.borrow().is_direct() {
             h.direct_bytes.fetch_add(n as u64, Ordering::Relaxed);
         } else {

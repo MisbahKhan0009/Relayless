@@ -9,7 +9,7 @@ const job = (o: any) => ({
 });
 export const data: Record<string, any> = {
   bootstrap: {
-    settings: { deviceName: "Berlin-Studio", downloadDir: "C:\\Users\\Lena\\Downloads\\Relayless", parallelStreams: 12, maxConcurrentJobs: 2, downloadLimitKbps: 0, uploadLimitKbps: 0, connectionMode: "direct_only", congestion: "bbr", chunkSizeMib: 16, lowPriority: true, notifications: true, closeToTray: true, onboarded: (window as any).__onboarded ?? true, historyRetention: "365", historyNames: true },
+    settings: { deviceName: "Berlin-Studio", downloadDir: "C:\\Users\\Lena\\Downloads\\Relayless", parallelStreams: 12, maxConcurrentJobs: 2, downloadLimitKbps: 0, uploadLimitKbps: 0, connectionMode: "allow_relay", congestion: "bbr", chunkSizeMib: 16, lowPriority: true, notifications: true, closeToTray: true, onboarded: (window as any).__onboarded ?? true, historyRetention: "365", historyNames: true },
     network: { endpointId: "9f3c1e7a2b4d6f8091a3c5e7f9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7", endpointShort: "9f3c1e7a", online: true, relayUrl: "https://euc1-1.relay.n0.iroh-canary.iroh.link./", directAddrs: 3 },
     platform: (window as any).__platform ?? "windows",
     version: "0.1.0", dataDir: "C:\\Users\\Lena\\AppData\\Roaming\\app.relayless.desktop",

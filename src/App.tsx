@@ -85,7 +85,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
       <div className="more-me">
         <span className={`dot ${s.network?.online ? "ok" : "warn"}`} />
         <span className="grow truncate"><b>{s.settings?.deviceName}</b> {s.network?.online ? "is online" : "is connecting…"}</span>
-        <span className="small faint">{s.settings?.connectionMode === "direct_only" ? "Direct only" : "Relay fallback on"}</span>
+        <span className="small faint">{s.settings?.connectionMode === "direct_only" ? "Direct only" : "Direct first"}</span>
       </div>
     </Modal>
   );
@@ -175,7 +175,7 @@ export default function App() {
           {s.settings?.connectionMode === "direct_only" ? (
             <span className="pill pill-muted" title="File data only uses direct paths">Direct only</span>
           ) : (
-            <span className="pill pill-warn" title="Relay fallback is allowed">Relay fallback on</span>
+            <span className="pill pill-muted" title="Uses a direct path when the routers allow it, otherwise an end-to-end encrypted relay">Direct first</span>
           )}
           <Button className={`topbar-connect ${phone && s.page === "overview" ? "hide-phone" : ""}`} variant="primary" icon={<KeyRound size={15} />} onClick={() => s.setConnectOpen(true)} aria-label="Connect with code">
             Connect

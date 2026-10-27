@@ -306,6 +306,10 @@ pub struct Settings {
     pub history_retention: String,
     /// Keep file names in history. When off, only type and size are kept.
     pub history_names: bool,
+    /// Set once the default route mode moved to direct-first with relay
+    /// fallback, so existing installs get the new default exactly once.
+    #[serde(default)]
+    pub route_v2: bool,
 }
 
 impl Default for Settings {
@@ -317,7 +321,7 @@ impl Default for Settings {
             max_concurrent_jobs: 2,
             download_limit_kbps: 0,
             upload_limit_kbps: 0,
-            connection_mode: "direct_only".into(),
+            connection_mode: "allow_relay".into(),
             congestion: "bbr".into(),
             chunk_size_mib: 16,
             low_priority: true,
@@ -326,6 +330,7 @@ impl Default for Settings {
             onboarded: false,
             history_retention: "365".into(),
             history_names: true,
+            route_v2: true,
         }
     }
 }
@@ -335,8 +340,8 @@ impl Settings {
         self.parallel_streams = self.parallel_streams.clamp(1, 32);
         self.max_concurrent_jobs = self.max_concurrent_jobs.clamp(1, 6);
         self.chunk_size_mib = self.chunk_size_mib.clamp(8, 32);
-        if self.connection_mode != "allow_relay" {
-            self.connection_mode = "direct_only".into();
+        if self.connection_mode != "direct_only" {
+            self.connection_mode = "allow_relay".into();
         }
         if self.congestion != "cubic" {
             self.congestion = "bbr".into();
@@ -464,5 +469,19 @@ impl CoreEvent {
                 json!({ "jobId": job_id, "checked": checked, "total": total })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_settings_get_relay_fallback_once() {
+        let old: Settings = serde_json::from_str(r#"{"connectionMode":"direct_only","deviceName":"PC"}"#).unwrap();
+        assert!(!old.route_v2, "settings saved before the change must migrate");
+        let fresh = Settings::default();
+        assert!(fresh.route_v2);
+        assert_eq!(fresh.connection_mode, "allow_relay");
     }
 }

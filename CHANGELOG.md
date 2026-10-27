@@ -24,6 +24,8 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 - Download progress is saved per verified megabyte, so pausing or losing the connection keeps everything already received. Downloads started on earlier versions keep their progress.
 
 ### Fixed
+- **Transfers between different networks no longer sit at 0.** Relayless now tries a direct path first and, if routers block it (common on mobile data), continues through an end-to-end encrypted relay after about 15 seconds, switching back to direct when possible. Existing installs move to this mode once; Direct only is still in Settings.
+- Slow links no longer time out mid-block: a stream is only treated as stalled after 90 seconds with no data, and progress and speed now count bytes as they arrive.
 - On phones, no page can be scrolled sideways any more (Overview, Transfers and Settings were wider than the screen on small phones).
 - Updated the `rand` dependency to 0.10.
 - Pausing early in a download no longer starts it over on resume.

@@ -354,7 +354,7 @@
               <ul>
                 <li>Two device IDs and their IP addresses, so they can punch through routers</li>
                 <li>For a short code, a sealed record it can't open, for 30 minutes</li>
-                <li>Encrypted packets, only if you allow relay fallback and no direct path opens</li>
+                <li>Encrypted packets it can't read, only when routers block a direct path (or never, in direct-only mode)</li>
               </ul>
             </div>
             <div class="sees-col">
@@ -368,7 +368,7 @@
             <li><strong>Invitations you control</strong><span>Random 128-bit keys that expire, can be limited to a number of devices, and can be revoked.</span></li>
             <li><strong>Approval for new devices</strong><span>You see the device name and safety words before it can browse anything. Remove access in one click.</span></li>
             <li><strong>One folder, read-only</strong><span>Path tricks, symlinks and junctions that point outside the folder are refused by the sender.</span></li>
-            <li><strong>Direct-only by default</strong><span>File data waits for a direct path instead of switching to a relay silently.</span></li>
+            <li><strong>Direct first, never silent</strong><span>Direct paths are always tried first; the route is shown live and every relayed byte is on the receipt. Direct only is one setting away.</span></li>
           </ul>
         </div>
       </section>
@@ -467,7 +467,7 @@ cargo test -p relayless-core --release</code></pre>
             </details>
             <details>
               <summary>What if a direct connection is impossible?</summary>
-              <p>Some strict networks block direct paths. In direct-only mode the transfer waits and explains why. You can allow relay fallback in Settings: data then passes through a public relay, still end-to-end encrypted, usually more slowly.</p>
+              <p>Some networks, mobile data in particular, block direct paths. Relayless tries direct first and, after about 15 seconds, continues through a public relay. The data stays end-to-end encrypted, so the relay can't read or keep it, and it switches back to direct as soon as a path opens. The receipt shows how much went through the relay. If you'd rather wait for a direct path, choose Direct only in Settings.</p>
             </details>
             <details>
               <summary>Is there a size limit?</summary>

@@ -30,7 +30,7 @@ Especially interesting:
 - connecting or downloading without an approved invitation or grant
 - tampering with data in transit without detection, or a file being finalized with wrong content
 - invitation or short-code weaknesses (guessing, replay, use after revocation or expiry)
-- file data passing through a relay while direct-only mode is on
+- file data passing through a relay while direct-only mode is on, or a relayed path that isn't shown as relayed
 - crashes or resource exhaustion triggered by a remote peer
 - secrets or file contents appearing in logs
 - safety words that differ from what both devices should derive, or that could be forced to collide

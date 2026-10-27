@@ -18,7 +18,7 @@ Relayless sends large files directly from one device to another, end-to-end encr
 
 ## Positioning
 
-No account, no cloud copy, no upload step. Files go device to device over QUIC with NAT hole punching; relays are off by default (direct-only mode) and, when allowed, only carry encrypted bytes they cannot read. Every transfer leaves a privacy receipt on the device (route, encryption, verification, what servers stored: nothing) and paired devices can compare safety words to rule out anyone in the middle.
+No account, no cloud copy, no upload step. Files go device to device over QUIC with NAT hole punching; a direct path is always tried first, and when routers block it a relay carries only end-to-end encrypted bytes it cannot read or keep (direct-only mode is one setting away). Every transfer leaves a privacy receipt on the device (route, encryption, verification, what servers stored: nothing) and paired devices can compare safety words to rule out anyone in the middle.
 
 ## Operating Context
 
@@ -30,7 +30,7 @@ No account, no cloud copy, no upload step. Files go device to device over QUIC w
 ## Capabilities and Constraints
 
 - Protocol v2: chunks sent in 1 MiB blocks, each with a BLAKE3 hash; resume from the last saved block; final whole-file check.
-- Direct-only by default; optional relay fallback.
+- Direct first by default, with encrypted relay fallback after about 15 seconds; optional direct-only mode.
 - Bandwidth limits, parallel streams, low CPU priority option.
 - Safety words: five words derived from both devices' public keys.
 - Local history: per-transfer receipts, calendar of activity, totals per device pair and per file category. Default retention 1 year; options forever, 90 days, 30 days, off; option to keep history without file names.
