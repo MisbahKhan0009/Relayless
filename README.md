@@ -87,7 +87,7 @@ Sending a 64 GB file across continents usually means uploading it to someone els
 | **Windows** | `Relayless-Setup-<version>-x64.exe` | Windows 10 or 11, 64-bit. No administrator rights needed. |
 | **Android** | `Relayless-<version>-android.apk` | Android 7.0 or newer. One universal APK for every phone and tablet. |
 
-Get both from the **[latest release](https://github.com/MisbahKhan0009/Relayless/releases/latest)**. Each release includes SHA-256 checksums. Both devices need the same version.
+Get both from the **[latest release](https://github.com/MisbahKhan0009/Relayless/releases/latest)**.
 
 > [!NOTE]
 > The builds aren't code-signed by a certificate authority yet. On Windows, SmartScreen may show *Windows protected your PC*: choose **More info → Run anyway**. On Android, allow your browser or file manager to install apps; if Play Protect warns, choose **More details → Install anyway**.
