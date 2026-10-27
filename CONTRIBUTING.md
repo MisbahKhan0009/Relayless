@@ -57,7 +57,7 @@ CI runs the same tests on Linux and Windows and builds and launches both apps.
 - **Privacy is the product.** Nothing about files, devices or history may leave the two devices except inside their encrypted connection. No analytics, no crash reporting to third parties, no new network calls without an issue first. If a feature records something, it goes in local history and follows the retention setting.
 - **Database changes** need a new schema version and a migration in `crates/core/src/db.rs`; existing installs must keep their downloads.
 - **Interface copy** is plain and specific: say what happened and what the user can do, in sentence case. Privacy claims must be checkable in the app (a receipt, a setting, a route badge), never just a slogan.
-- **Design:** read [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md) before UI work. Chart colours are fixed there (received green, sent violet); text never takes a series colour.
+- **Design:** read [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md) before UI work. Chart colours are fixed there (received white, sent red); text never takes a series colour, and every HUD element must show real data.
 - **Tests:** engine changes should come with an end-to-end test in `crates/core/tests/e2e.rs` where practical.
 
 ## Releases

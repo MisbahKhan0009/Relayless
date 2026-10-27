@@ -1,10 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Pause, RefreshCw, Waypoints, Zap } from "lucide-react";
 import { speed } from "./format";
 import { useStore } from "./store";
 
-/** Validated two-series chart colours (dataviz validator, dark surface). */
-export const SERIES = { in: "#16AE4D", out: "#9277F5" } as const;
+/**
+ * Two-series chart colours: received is white, sent is red. They differ in
+ * lightness as well as hue, so they stay apart for colour-blind readers.
+ * Kept in sync with --series-in and --series-out in styles.css.
+ */
+export const SERIES = { in: "#F2F2F2", out: "#E5323F" } as const;
 
 const WINDOW = 120; // seconds of history the live graph keeps
 
@@ -111,7 +114,7 @@ export function FlowProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={flow}>{children}</Ctx.Provider>;
 }
 
-const MARK_ICON: Record<MarkKind, typeof Pause> = { pause: Pause, reconnect: RefreshCw, relay: Waypoints, direct: Zap };
+const MARK_TEXT: Record<MarkKind, string> = { pause: "Paused", reconnect: "Dropped", relay: "Relay", direct: "Direct" };
 
 function niceMax(v: number): number {
   // Work in MiB so axis labels land on round numbers the way speeds are shown.
@@ -127,7 +130,11 @@ function ago(sec: number) {
   return sec < 60 ? `${sec} s ago` : `${Math.floor(sec / 60)} min ${sec % 60 ? `${sec % 60} s ` : ""}ago`;
 }
 
-/** Live receive/send speed over the last two minutes. */
+/**
+ * Live receive and send speed over the last two minutes, one bar per second.
+ * Received bars rise above the baseline, sent bars hang below it, both on the
+ * same scale; each side gets height in proportion to its own peak.
+ */
 export function LiveFlow() {
   const { samples, marks } = useFlow();
   // The legend reads the same live figures as the rest of the screen.
@@ -136,7 +143,7 @@ export function LiveFlow() {
   const nowUp = uploads.reduce((a, u) => a + u.bps, 0);
   const box = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(640);
-  const [hover, setHover] = useState<number | null>(null);
+  const [hoverT, setHoverT] = useState<number | null>(null);
   const [, force] = useState(0);
 
   useEffect(() => {
@@ -154,51 +161,50 @@ export function LiveFlow() {
   }, []);
 
   const now = Date.now();
-  const recent = samples.filter((s) => s.t >= now - WINDOW * 1000);
-  // End the lines on the live figures, so the graph and the legend agree.
-  const visible = recent.length ? [...recent, { t: now, down: nowDown, up: nowUp }] : recent;
-  const last = visible[visible.length - 1];
-  const hasUp = visible.some((s) => s.up > 0);
-  const hasDown = visible.some((s) => s.down > 0);
+  const from = now - WINDOW * 1000;
+  const visible = samples.filter((s) => s.t >= from);
+  const hasDown = visible.some((s) => s.down > 0) || nowDown > 0;
+  const hasUp = visible.some((s) => s.up > 0) || nowUp > 0;
 
-  const H = 176;
-  const pad = { l: 64, r: 14, t: 18, b: 26 };
+  const narrow = w < 520;
+  const H = narrow ? 150 : 176;
+  const pad = { l: narrow ? 36 : 46, r: 8, t: 24, b: 22 };
   const iw = Math.max(10, w - pad.l - pad.r);
   const ih = H - pad.t - pad.b;
-  const max = niceMax(Math.max(1, ...visible.map((s) => Math.max(s.down, s.up))) * 1.1);
-  const x = (t: number) => pad.l + ((t - (now - WINDOW * 1000)) / (WINDOW * 1000)) * iw;
-  const y = (v: number) => pad.t + ih - (v / max) * ih;
+  const peakDown = Math.max(0, nowDown, ...visible.map((s) => s.down));
+  const peakUp = Math.max(0, nowUp, ...visible.map((s) => s.up));
+  let nd = hasDown ? niceMax(peakDown * 1.05) : 0;
+  const nu = hasUp ? niceMax(peakUp * 1.05) : 0;
+  if (nd + nu === 0) nd = niceMax(1);
+  const k = ih / (nd + nu);
+  const y0 = pad.t + nd * k;
+  const x = (t: number) => pad.l + ((t - from) / (WINDOW * 1000)) * iw;
+  const bw = Math.max(1.5, (iw / WINDOW) * 0.56);
 
-  const path = (key: "down" | "up") => {
-    const pts = visible.map((s) => `${x(s.t).toFixed(1)},${y(s[key]).toFixed(1)}`);
-    return pts.length ? `M${pts.join("L")}` : "";
-  };
-  const area = (key: "down" | "up") => {
-    if (visible.length < 2) return "";
-    const first = visible[0];
-    return `${path(key)}L${x(last.t).toFixed(1)},${y(0)}L${x(first.t).toFixed(1)},${y(0)}Z`;
-  };
+  const bars = (key: "down" | "up") =>
+    visible
+      .filter((s) => s[key] > 0)
+      .map((s) => {
+        const h = Math.max(1, s[key] * k);
+        return key === "down" ? `M${x(s.t).toFixed(1)} ${(y0 - 1).toFixed(1)}v${(-h).toFixed(1)}` : `M${x(s.t).toFixed(1)} ${(y0 + 1).toFixed(1)}v${h.toFixed(1)}`;
+      })
+      .join("");
 
-  const ticks = [0, max / 2, max];
-  const hv = hover != null ? visible[hover] : null;
+  const hv = hoverT == null || visible.length === 0 ? null : visible.reduce((b, s) => (Math.abs(s.t - hoverT) < Math.abs(b.t - hoverT) ? s : b));
   const hoverMarks = hv ? marks.filter((m) => Math.abs(m.t - hv.t) <= 1500) : [];
+  const shownMarks = marks.filter((m) => m.t >= from);
 
   const onMove = (clientX: number) => {
     const r = box.current?.getBoundingClientRect();
-    if (!r || visible.length === 0) return;
-    const px = clientX - r.left;
-    const t = now - WINDOW * 1000 + ((px - pad.l) / iw) * WINDOW * 1000;
-    let best = 0;
-    visible.forEach((s, i) => {
-      if (Math.abs(s.t - t) < Math.abs(visible[best].t - t)) best = i;
-    });
-    setHover(best);
+    if (!r) return;
+    setHoverT(from + ((clientX - r.left - pad.l) / iw) * WINDOW * 1000);
   };
 
   return (
     <section className="panel flow" aria-label="Live transfer speed">
       <div className="flow-head">
-        <h3>Live speed</h3>
+        <h3>Throughput</h3>
+        <span className="flow-sub">Last 2 min · 1 bar = 1 s</span>
         <div className="flow-legend" role="list">
           <span role="listitem" className={hasDown ? "" : "dim"}>
             <i style={{ background: SERIES.in }} />
@@ -217,52 +223,40 @@ export function LiveFlow() {
         ref={box}
         onPointerMove={(e) => onMove(e.clientX)}
         onPointerDown={(e) => onMove(e.clientX)}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={() => setHoverT(null)}
       >
-        <svg width={w} height={H} role="img" aria-label={`Receiving ${speed(nowDown)}, sending ${speed(nowUp)}; graph of the last two minutes`}>
-          {ticks.map((v) => (
-            <g key={v}>
-              <line x1={pad.l} x2={pad.l + iw} y1={y(v)} y2={y(v)} className="flow-grid" />
-              <text x={pad.l - 10} y={y(v) + 4} textAnchor="end" className="flow-tick">
-                {v === 0 ? "0" : v === max ? speed(v) : speed(v).replace("/s", "")}
-              </text>
+        <svg width={w} height={H} role="img" aria-label={`Receiving ${speed(nowDown)}, sending ${speed(nowUp)}; bars for each second of the last two minutes`}>
+          <line x1={pad.l} x2={pad.l + iw} y1={pad.t + 0.5} y2={pad.t + 0.5} className="flow-grid" />
+          {hasDown && <line x1={pad.l} x2={pad.l + iw} y1={pad.t + (nd / 2) * k} y2={pad.t + (nd / 2) * k} className="flow-grid" />}
+          {hasUp && <line x1={pad.l} x2={pad.l + iw} y1={H - pad.b - 0.5} y2={H - pad.b - 0.5} className="flow-grid" />}
+          <line x1={pad.l} x2={pad.l + iw} y1={y0} y2={y0} className="flow-base" />
+          {hasDown && (
+            <text x={pad.l - 8} y={pad.t + 4} textAnchor="end" className="flow-tick">{speed(nd).replace("/s", "")}</text>
+          )}
+          <text x={pad.l - 8} y={y0 + 3.5} textAnchor="end" className="flow-tick">0</text>
+          {hasUp && (
+            <text x={pad.l - 8} y={H - pad.b + 3} textAnchor="end" className="flow-tick">{speed(nu).replace("/s", "")}</text>
+          )}
+          {shownMarks.map((m, i) => (
+            <g key={`${m.t}-${m.kind}-${i}`} className={`flow-mark mark-${m.kind}`}>
+              <line x1={x(m.t)} x2={x(m.t)} y1={pad.t - 10} y2={H - pad.b} />
+              <text x={x(m.t) + 4} y={pad.t - 12}>{MARK_TEXT[m.kind]}</text>
             </g>
           ))}
-          {[WINDOW, WINDOW / 2, 0].map((sec) => (
-            <text key={sec} x={x(now - sec * 1000)} y={H - 6} textAnchor={sec === WINDOW ? "start" : sec === 0 ? "end" : "middle"} className="flow-tick">
-              {sec === 0 ? "now" : sec === WINDOW ? "2 min ago" : "1 min ago"}
-            </text>
-          ))}
-          {marks.map((m) => (
-            <line key={`${m.t}-${m.kind}`} x1={x(m.t)} x2={x(m.t)} y1={pad.t - 6} y2={y(0)} className="flow-mark" />
-          ))}
-          {hasUp && <path d={area("up")} fill={SERIES.out} opacity={0.1} />}
-          {hasDown && <path d={area("down")} fill={SERIES.in} opacity={0.1} />}
-          {hasUp && <path d={path("up")} fill="none" stroke={SERIES.out} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
-          {hasDown && <path d={path("down")} fill="none" stroke={SERIES.in} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
-          {hv && <line x1={x(hv.t)} x2={x(hv.t)} y1={pad.t} y2={y(0)} className="flow-cross" />}
-          {(hv ? [hv] : last ? [last] : []).map((s) => (
-            <g key="dots">
-              {hasUp && <circle cx={x(s.t)} cy={y(s.up)} r={4} fill={SERIES.out} className="flow-dot" />}
-              {hasDown && <circle cx={x(s.t)} cy={y(s.down)} r={4} fill={SERIES.in} className="flow-dot" />}
-            </g>
-          ))}
+          {hasDown && <path d={bars("down")} stroke={SERIES.in} strokeWidth={bw} fill="none" />}
+          {hasUp && <path d={bars("up")} stroke={SERIES.out} strokeWidth={bw} fill="none" />}
+          {hv && <line x1={x(hv.t)} x2={x(hv.t)} y1={pad.t} y2={H - pad.b} className="flow-cross" />}
+          <text x={pad.l} y={H - 4} className="flow-tick">−2:00</text>
+          <text x={pad.l + iw / 2} y={H - 4} textAnchor="middle" className="flow-tick">−1:00</text>
+          <text x={pad.l + iw} y={H - 4} textAnchor="end" className="flow-tick now">NOW</text>
         </svg>
-        {marks.map((m) => {
-          const Icon = MARK_ICON[m.kind];
-          return (
-            <span key={`${m.t}-${m.kind}-i`} className={`flow-pin pin-${m.kind}`} style={{ left: x(m.t) }} title={m.text}>
-              <Icon size={10} strokeWidth={2.5} aria-hidden="true" />
-            </span>
-          );
-        })}
         {hv && (
           <div className="flow-tip" style={{ left: Math.min(Math.max(x(hv.t), 120), w - 120) }}>
-            <span className="faint small">{ago(Math.round((now - hv.t) / 1000))}</span>
+            <span className="lab">{ago(Math.round((now - hv.t) / 1000))}</span>
             <span className="tip-row"><i style={{ background: SERIES.in }} />Receiving<b className="num">{speed(hv.down)}</b></span>
             <span className="tip-row"><i style={{ background: SERIES.out }} />Sending<b className="num">{speed(hv.up)}</b></span>
-            {hoverMarks.map((m) => (
-              <span key={m.t} className="tip-note small">{m.text}</span>
+            {hoverMarks.map((m, i) => (
+              <span key={i} className="tip-note small">{m.text}</span>
             ))}
           </div>
         )}

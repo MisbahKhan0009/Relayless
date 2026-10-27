@@ -3,6 +3,8 @@ import { useMemo } from "react";
 import { isActive, ago } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, RouteBadge, SectionHeader, usePhone } from "../ui";
+import { Globe } from "../hud";
+import { FocusTransfer, useFocusJob } from "../focus";
 import { JobRow, SendRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
 import { StorageAccessNotice } from "../android";
@@ -11,6 +13,54 @@ import PhoneHome from "./PhoneHome";
 
 export default function Overview() {
   return usePhone() ? <PhoneHome /> : <DesktopOverview />;
+}
+
+function relayHost(url: string | null): string {
+  if (!url) return "–";
+  try {
+    return new URL(url).hostname.split(".")[0] || "–";
+  } catch {
+    return "–";
+  }
+}
+
+/** This device's network state. The globe is decoration; no locations are looked up. */
+function NetworkPanel() {
+  const { network, remotes, grants } = useStore();
+  const online = !!network?.online;
+  const linked = new Set([
+    ...remotes.filter((r) => r.status.state === "connected").map((r) => r.peerId),
+    ...grants.filter((g) => g.connected).map((g) => g.peerId),
+  ]).size;
+  const known = new Set([...remotes.map((r) => r.peerId), ...grants.map((g) => g.peerId)]).size;
+  return (
+    <section className="panel netp" aria-label="Network">
+      <div className="focus-head">
+        <span className="lab">Network</span>
+        <span className="lab netp-state">
+          <span className={`dot ${online ? "ok" : "warn"}`} />
+          {online ? "Online" : "Connecting"}
+        </span>
+      </div>
+      <div className="netp-globe">
+        <Globe size={150} online={online} />
+      </div>
+      <dl className="netp-kv">
+        <div>
+          <dt className="lab">Home relay</dt>
+          <dd className="num">{relayHost(network?.relayUrl ?? null)}</dd>
+        </div>
+        <div>
+          <dt className="lab">Devices linked</dt>
+          <dd className="num">{linked} of {known}</dd>
+        </div>
+        <div>
+          <dt className="lab">Stored on servers</dt>
+          <dd className="num red-text">0 bytes</dd>
+        </div>
+      </dl>
+    </section>
+  );
 }
 
 function DesktopOverview() {
@@ -22,25 +72,33 @@ function DesktopOverview() {
   const down = list.filter((j) => j.status === "downloading").reduce((s, j) => s + j.speedBps, 0);
   const up = uploads.reduce((s, u) => s + u.bps, 0);
   const flowActive = useFlowActive();
+  const focus = useFocusJob();
 
   return (
     <div className="page">
       <StorageAccessNotice />
-      <div className="hero-actions">
-        <button className="hero-tile" onClick={shareFolder}>
-          <span className="ico"><FolderUp size={22} /></span>
-          <span className="stack">
-            <span className="t">Share a folder</span>
-            <span className="d">Pick a folder and invite someone to download from it.</span>
-          </span>
-        </button>
-        <button className="hero-tile" onClick={() => setConnectOpen(true)}>
-          <span className="ico"><KeyRound size={22} /></span>
-          <span className="stack">
-            <span className="t">Connect with code</span>
-            <span className="d">Use an invitation or short code someone sent you.</span>
-          </span>
-        </button>
+      <div className="hud-top">
+        {focus.job ? (
+          <FocusTransfer job={focus.job} index={focus.index} count={focus.count} />
+        ) : (
+          <div className="hero-actions stacked">
+            <button className="hero-tile" onClick={shareFolder}>
+              <span className="ico"><FolderUp size={22} /></span>
+              <span className="stack">
+                <span className="t">Share a folder</span>
+                <span className="d">Pick a folder and invite someone to download from it.</span>
+              </span>
+            </button>
+            <button className="hero-tile" onClick={() => setConnectOpen(true)}>
+              <span className="ico"><KeyRound size={22} /></span>
+              <span className="stack">
+                <span className="t">Connect with code</span>
+                <span className="d">Use an invitation or short code someone sent you.</span>
+              </span>
+            </button>
+          </div>
+        )}
+        <NetworkPanel />
       </div>
 
       {(flowActive || down > 0 || up > 0) && <LiveFlow />}

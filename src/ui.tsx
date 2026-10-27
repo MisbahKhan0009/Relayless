@@ -6,7 +6,6 @@ import {
   CirclePause,
   Clock,
   Loader2,
-  Radio,
   RefreshCw,
   ShieldCheck,
   Waypoints,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import type { JobStatus, RouteInfo } from "./api";
 import { STATUS_TEXT, statusTone, type Tone } from "./format";
+import { RouteGlyph } from "./hud";
 
 export function Button({
   variant = "secondary",
@@ -116,17 +116,17 @@ export function StatusPill({ status }: { status: JobStatus }) {
 
 export function RouteBadge({ route, connected = true }: { route: RouteInfo | null | undefined; connected?: boolean }) {
   if (!connected || !route || route.kind === "none") {
-    return <Pill tone="muted" icon={<Radio size={12} />}>Offline</Pill>;
+    return <Pill tone="muted" icon={<RouteGlyph kind="none" />}>Offline</Pill>;
   }
   if (route.kind === "direct") {
     return (
-      <Pill tone="ok" icon={<Zap size={12} />}>
+      <Pill tone="ok" icon={<RouteGlyph kind="direct" />}>
         Direct{route.rttMs != null ? ` · ${route.rttMs} ms` : ""}
       </Pill>
     );
   }
   return (
-    <Pill tone="warn" icon={<Waypoints size={12} />}>
+    <Pill tone="warn" icon={<RouteGlyph kind="relay" />}>
       Relayed{route.rttMs != null ? ` · ${route.rttMs} ms` : ""}
     </Pill>
   );

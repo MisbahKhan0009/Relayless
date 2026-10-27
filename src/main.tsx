@@ -4,6 +4,8 @@ import App from "./App";
 import { StoreProvider } from "./store";
 import { FlowProvider } from "./flow";
 import "@fontsource-variable/figtree";
+import "@fontsource-variable/oxanium";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
 
 // Desktop app: no browser context menu or accidental reloads.

@@ -64,7 +64,7 @@ export function JobRow({ job, compact = false }: { job: Job; compact?: boolean }
   const timeline = open ? activity.filter((a) => a.jobId === job.id).slice(0, 12) : [];
 
   return (
-    <div className="job">
+    <div className={`job ${job.status === "needs_attention" || job.status === "failed" ? "attn" : ""}`}>
       <div className={`job-ico tone-${tone}`}>
         <StatusIcon status={job.status} size={17} />
       </div>
