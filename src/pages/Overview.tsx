@@ -2,13 +2,18 @@ import { ArrowUpRight, FolderUp, KeyRound, Monitor, Upload as UploadIcon } from 
 import { useMemo } from "react";
 import { bytes, isActive, speed, ago } from "../format";
 import { useStore } from "../store";
-import { Button, Empty, RouteBadge, SectionHeader } from "../ui";
+import { Button, Empty, RouteBadge, SectionHeader, usePhone } from "../ui";
 import { JobRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
 import { StorageAccessNotice } from "../android";
 import { LiveFlow, useFlowActive } from "../flow";
+import PhoneHome from "./PhoneHome";
 
 export default function Overview() {
+  return usePhone() ? <PhoneHome /> : <DesktopOverview />;
+}
+
+function DesktopOverview() {
   const { jobs, uploads, remotes, grants, activity, setPage, setConnectOpen, openBrowser } = useStore();
   const shareFolder = useShareFolder();
   const list = useMemo(() => Object.values(jobs).sort((a, b) => b.updatedAt - a.updatedAt), [jobs]);

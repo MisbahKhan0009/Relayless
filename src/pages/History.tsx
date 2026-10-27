@@ -7,7 +7,7 @@ import { bytes, duration, speed } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, IconButton, SafetyWords, Segmented, usePhone } from "../ui";
 
-type Dir = "both" | "received" | "sent";
+export type Dir = "both" | "received" | "sent";
 
 const DAY = 86_400_000;
 
@@ -183,7 +183,7 @@ function ReceiptRow({ e, open, onToggle }: { e: HistoryEntry; open: boolean; onT
  * disc splits into received and sent wedges. Days too small to draw at scale
  * get a hollow ring, so a 3 MB day never looks like a 1 GB one.
  */
-function DayDot({ d, inB, outB, tiny, dir, i = 0 }: { d: number; inB: number; outB: number; tiny: boolean; dir: Dir; i?: number }) {
+export function DayDot({ d, inB, outB, tiny, dir, i = 0 }: { d: number; inB: number; outB: number; tiny: boolean; dir: Dir; i?: number }) {
   const r = d / 2;
   const style = { ["--i" as string]: i } as React.CSSProperties;
   const main = dir === "sent" || (dir === "both" && outB > inB) ? SERIES.out : SERIES.in;

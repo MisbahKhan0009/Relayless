@@ -10,6 +10,8 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 - **Safety words.** Five words derived from both devices' keys, shown when a device asks for access, while connecting, and on device lists.
 - **Live speed graph** on Overview and Transfers: receive and send speed for the last two minutes, with markers for pauses, reconnects and route changes.
 - Privacy section in Settings.
+- New phone Home screen: big Send and Receive buttons, live speed, transfers in progress, this week's activity as dots, devices and your shared folders.
+- Phone navigation trimmed to Home, Devices, Transfers and More; Shared folders, History, Activity and Settings open from More.
 - Glass interface with a new dark theme and green accent, bundled Figtree typeface, new app icon.
 - Phone layout: bottom-sheet dialogs, large two-line rows in the folder browser, tap to select, sort chips, a fixed download bar, and a save location you can pick without typing.
 - Project website, contribution guide, security policy and architecture notes.
@@ -20,6 +22,7 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 - Download progress is saved per verified megabyte, so pausing or losing the connection keeps everything already received. Downloads started on earlier versions keep their progress.
 
 ### Fixed
+- On phones, no page can be scrolled sideways any more (Overview, Transfers and Settings were wider than the screen on small phones).
 - Updated the `rand` dependency to 0.10.
 - Pausing early in a download no longer starts it over on resume.
 - On Android, the keyboard no longer opens and closes repeatedly in dialogs.

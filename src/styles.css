@@ -684,7 +684,7 @@ a {
 
 .two-col {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 28px;
 }
 
@@ -1663,7 +1663,7 @@ html {
   }
   .hero-actions,
   .two-col {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
   }
   .hero-tile {
@@ -1677,8 +1677,11 @@ html {
     font-size: 18px;
   }
   .setting {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
+  }
+  .setting > * {
+    min-width: 0;
   }
   .settings-group {
     padding: 2px 14px;
@@ -2932,5 +2935,244 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .cal-day .cal-dot {
     animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ phone home and More sheet */
+
+.block {
+  display: block;
+}
+
+.more-list {
+  display: flex;
+  flex-direction: column;
+  margin: -4px -6px 0;
+}
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.more-item:active,
+.more-item:hover {
+  background: var(--hover);
+}
+.more-item.on .more-label {
+  color: var(--accent);
+}
+.more-ico {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.more-label {
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.more-me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 2px 2px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.phome {
+  gap: 18px;
+}
+.phome-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.pact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 116px;
+  padding: 16px 16px 14px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease-out, background 0.15s;
+}
+.pact svg {
+  margin-bottom: auto;
+  color: var(--accent);
+}
+.pact:active {
+  transform: scale(0.98);
+}
+.pact-t {
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+  margin-top: 14px;
+}
+.pact-d {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.pact-send {
+  background: var(--accent);
+  border-color: transparent;
+  color: #000;
+}
+.pact-send svg {
+  color: #000;
+}
+.pact-send .pact-d {
+  color: rgba(0, 0, 0, 0.68);
+}
+.phome-up {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.phome-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.phome-head h2 {
+  font-size: 17px;
+  font-weight: 700;
+}
+.phome-link {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.row-list > .row + .phome-link {
+  border-top: 1px solid var(--border);
+}
+.week {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.week-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.week-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.week-dot {
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+.week-dot .cal-dot {
+  animation: dot-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+.week-empty {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+}
+.week-wd {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.week-day.today .week-wd {
+  color: var(--accent);
+}
+.week-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.week-text b {
+  color: var(--text);
+  font-weight: 650;
+}
+.phome-proof {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 2px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+.phome-proof svg {
+  flex: none;
+  margin-top: 2px;
+}
+.phome-proof svg:first-child {
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .week-dot .cal-dot {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .flow-legend {
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .flow-legend b {
+    min-width: 0;
+  }
+  /* Safety net: nothing may push the page sideways on a phone. */
+  .content {
+    overflow-x: hidden;
+  }
+}
+.stack > .pill {
+  align-self: flex-start;
+}
+@media (max-width: 760px) {
+  .hide-phone {
+    display: none !important;
   }
 }
