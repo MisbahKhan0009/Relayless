@@ -11,6 +11,8 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 - **Live speed graph** on Overview and Transfers: receive and send speed for the last two minutes, with markers for pauses, reconnects and route changes.
 - **Sending is visible.** Files this device sends now appear in Transfers (new Sending tab), on Overview and on the phone Home screen, each with the receiver's progress, a percentage, speed, time left and a "Delivered and verified" state once the receiver has checked the file.
 - Downloads show a percentage too.
+- **Your own relay server:** Settings → Connection → Relay server. The free public relays are rate-limited (often around 1 Mbit/s); a self-hosted `iroh-relay` removes the limit. Guide: docs/RELAY.md.
+- Relayed transfers are labelled **Relayed** (receiving and sending), with an explanation of why they're slow and how to fix it.
 - Privacy section in Settings.
 - New phone Home screen: big Send and Receive buttons, live speed, transfers in progress, this week's activity as dots, devices and your shared folders.
 - Phone navigation trimmed to Home, Devices, Transfers and More; Shared folders, History, Activity and Settings open from More.

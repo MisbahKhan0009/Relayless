@@ -310,6 +310,9 @@ pub struct Settings {
     /// fallback, so existing installs get the new default exactly once.
     #[serde(default)]
     pub route_v2: bool,
+    /// The user's own relay servers (empty = n0's public relays, which are
+    /// rate-limited). Applies after restarting Relayless.
+    pub relay_urls: String,
 }
 
 impl Default for Settings {
@@ -331,6 +334,7 @@ impl Default for Settings {
             history_retention: "365".into(),
             history_names: true,
             route_v2: true,
+            relay_urls: String::new(),
         }
     }
 }
@@ -350,6 +354,7 @@ impl Settings {
             self.history_retention = "365".into();
         }
         self.device_name = self.device_name.trim().chars().take(64).collect();
+        self.relay_urls = self.relay_urls.trim().chars().take(1000).collect();
         self
     }
     pub fn direct_only(&self) -> bool {
@@ -398,6 +403,8 @@ pub struct OutgoingDto {
     pub status: String,
     pub started_at: i64,
     pub updated_at: i64,
+    /// "direct", "relay" or "none"
+    pub route: String,
 }
 
 /// Events pushed to the UI.

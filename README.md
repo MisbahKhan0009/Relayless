@@ -129,6 +129,8 @@ sequenceDiagram
 
 The lookup and relay servers (run by the [iroh](https://iroh.computer) project) only help the two devices find each other and punch through routers. They never see file names, contents or your history; receipts travel only between the two devices, inside the encrypted connection. By default Relayless tries a direct path for about 15 seconds and then, if routers block it (common on mobile data), continues through a relay that forwards end-to-end encrypted packets it can't read. It moves to a direct path as soon as one opens, and the receipt records how many bytes were relayed. **Direct only** in Settings keeps all file data off relays.
 
+The public relays are rate-limited (often around 1 Mbit/s). If your transfers show **Relayed** and are slow, see [docs/RELAY.md](docs/RELAY.md): enable UPnP or IPv6 for a direct path, or run your own relay for full speed.
+
 Read more in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Performance

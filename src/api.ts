@@ -167,6 +167,7 @@ export interface Outgoing {
   status: "sending" | "waiting" | "delivered" | "verified";
   startedAt: number;
   updatedAt: number;
+  route: string;
 }
 
 export interface Settings {
@@ -185,6 +186,7 @@ export interface Settings {
   onboarded: boolean;
   historyRetention: "forever" | "365" | "90" | "30" | "off";
   historyNames: boolean;
+  relayUrls: string;
 }
 
 /** A finished transfer kept on this device, with its privacy receipt. */

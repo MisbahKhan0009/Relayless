@@ -46,6 +46,7 @@ export default function Settings() {
   const [confirmClear, setConfirmClear] = useState<null | "clear" | "off">(null);
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [restartNote, setRestartNote] = useState(false);
+  const [relayNote, setRelayNote] = useState(false);
 
   const storage = useStorageAccess();
   const [battery, setBattery] = useState<boolean | null>(null);
@@ -218,7 +219,36 @@ export default function Settings() {
               ]}
             />
           </Row>
+          <Row
+            label="Relay server"
+            hint={
+              <>
+                Leave empty to use the free public relays, which are rate-limited (often around 1 Mbit/s). For fast transfers when routers block a
+                direct path, run your own relay and enter its address on both devices. Setup guide: docs/RELAY.md on the Relayless GitHub page.
+              </>
+            }
+          >
+            <input
+              className="input mono"
+              placeholder="relay.example.org"
+              defaultValue={settings.relayUrls}
+              spellCheck={false}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v !== settings.relayUrls) {
+                  save({ relayUrls: v });
+                  setRelayNote(true);
+                }
+              }}
+            />
+          </Row>
         </div>
+        {relayNote && (
+          <div className="notice" style={{ marginTop: 10 }}>
+            <Info size={16} />
+            <span>Quit Relayless and open it again to use the new relay server. Set the same relay on the other device too.</span>
+          </div>
+        )}
       </section>
 
       <section>

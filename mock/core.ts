@@ -9,7 +9,7 @@ const job = (o: any) => ({
 });
 export const data: Record<string, any> = {
   bootstrap: {
-    settings: { deviceName: "Berlin-Studio", downloadDir: "C:\\Users\\Lena\\Downloads\\Relayless", parallelStreams: 12, maxConcurrentJobs: 2, downloadLimitKbps: 0, uploadLimitKbps: 0, connectionMode: "allow_relay", congestion: "bbr", chunkSizeMib: 16, lowPriority: true, notifications: true, closeToTray: true, onboarded: (window as any).__onboarded ?? true, historyRetention: "365", historyNames: true },
+    settings: { deviceName: "Berlin-Studio", downloadDir: "C:\\Users\\Lena\\Downloads\\Relayless", parallelStreams: 12, maxConcurrentJobs: 2, downloadLimitKbps: 0, uploadLimitKbps: 0, connectionMode: "allow_relay", congestion: "bbr", chunkSizeMib: 16, lowPriority: true, notifications: true, closeToTray: true, onboarded: (window as any).__onboarded ?? true, historyRetention: "365", historyNames: true, relayUrls: "" },
     network: { endpointId: "9f3c1e7a2b4d6f8091a3c5e7f9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7", endpointShort: "9f3c1e7a", online: true, relayUrl: "https://euc1-1.relay.n0.iroh-canary.iroh.link./", directAddrs: 3 },
     platform: (window as any).__platform ?? "windows",
     version: "0.1.0", dataDir: "C:\\Users\\Lena\\AppData\\Roaming\\app.relayless.desktop",
@@ -109,7 +109,7 @@ export const data: Record<string, any> = {
   data.list_history = out.sort((a, b) => b.finishedAt - a.finishedAt);
 }
 data.list_outgoing = [
-  { id: "o1", peerId: "77aa88bb99", deviceName: "Lena's laptop", shareName: "Client deliveries", name: "scene-014-take-2.mov", path: ["scene-014-take-2.mov"], size: 6.4 * GB, sentBytes: 2.71 * GB, bps: 3.4 * 1024 * 1024, status: "sending", startedAt: now - 900e3, updatedAt: now },
+  { id: "o1", peerId: "77aa88bb99", deviceName: "Lena's laptop", shareName: "Client deliveries", name: "scene-014-take-2.mov", path: ["scene-014-take-2.mov"], size: 6.4 * GB, sentBytes: 2.71 * GB, bps: 3.4 * 1024 * 1024, status: "sending", startedAt: now - 900e3, updatedAt: now, route: "direct" },
   { id: "o2", peerId: "77aa88bb99", deviceName: "Lena's laptop", shareName: "Client deliveries", name: "color-grade-notes.pdf", path: ["color-grade-notes.pdf"], size: 4.2 * 1024 * 1024, sentBytes: 4.2 * 1024 * 1024, bps: 0, status: "verified", startedAt: now - 1200e3, updatedAt: now - 600e3 },
 ];
 data["plugin:relayless-android|has_all_files_access"] = { granted: false };

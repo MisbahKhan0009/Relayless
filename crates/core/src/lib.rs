@@ -97,7 +97,7 @@ impl Core {
         let endpoint = if opts.local_only {
             net::bind_local(secret).await?
         } else {
-            net::bind_main(secret, &settings.congestion).await?
+            net::bind_main(secret, &settings.congestion, &settings.relay_urls).await?
         };
         let (events, _) = broadcast::channel(1024);
         let inner = Arc::new(Inner {
@@ -971,7 +971,14 @@ pub(crate) fn outgoing_list(inner: &Inner) -> Vec<OutgoingDto> {
             } else {
                 "waiting"
             };
+            let route = inner
+                .incoming
+                .lock()
+                .get(&o.peer)
+                .and_then(|v| v.last().map(|(_, c)| route_of(c).kind))
+                .unwrap_or_else(|| "none".into());
             OutgoingDto {
+                route,
                 id: o.id.clone(),
                 device_name: grants
                     .iter()

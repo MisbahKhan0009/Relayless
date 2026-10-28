@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Trash2,
   Upload as UploadIcon,
+  Waypoints,
   ShieldCheck,
   Clock,
   X,
@@ -29,6 +30,10 @@ function explain(job: Job): string | null {
       return "The connection dropped. Every verified piece is saved on disk, so only the missing pieces will be fetched again.";
     case "waiting_direct":
       return "The routers between you block a direct path and direct-only mode is on, so no file data is sent. Relayless keeps trying. To continue now, choose Direct first in Settings on both devices; data then goes through an end-to-end encrypted relay.";
+    case "downloading":
+      return job.route === "relay"
+        ? "The routers between the two devices didn't allow a direct path, so this goes through an encrypted relay. The free public relays are rate-limited; for full speed, set your own relay server in Settings on both devices, or enable UPnP on your router."
+        : null;
     case "paused":
       return job.verifiedBytes > 0 ? "Resume continues from the verified progress below; nothing already downloaded is fetched again." : null;
     case "needs_attention":
@@ -85,6 +90,7 @@ export function JobRow({ job, compact = false }: { job: Job; compact?: boolean }
           {job.status !== "completed" && job.size > 0 && <span className="num job-pct">{pct(job.doneBytes, job.size)}</span>}
           {job.status === "downloading" && <span className="num">{speed(job.speedBps)}</span>}
           {job.status === "downloading" && job.etaSecs != null && <span className="num">{duration(job.etaSecs)} left</span>}
+          {job.status === "downloading" && job.route === "relay" && <RelayedPill />}
           {job.status === "verifying" && integ && <span className="num">checked {Math.round((integ.checked / Math.max(1, integ.total)) * 100)}%</span>}
           <span className="faint truncate">from {job.peerName}</span>
         </div>
@@ -209,6 +215,17 @@ export function JobRow({ job, compact = false }: { job: Job; compact?: boolean }
   );
 }
 
+function RelayedPill() {
+  return (
+    <span
+      className="pill pill-warn"
+      title="Going through an encrypted relay because the routers blocked a direct path. Public relays are rate-limited; set your own relay in Settings for full speed."
+    >
+      <Waypoints size={12} /> Relayed
+    </span>
+  );
+}
+
 function pct(done: number, size: number) {
   if (size <= 0) return "100%";
   const p = (done / size) * 100;
@@ -244,6 +261,7 @@ export function SendRow({ o, compact = false }: { o: Outgoing; compact?: boolean
           <span className="num">{done ? bytes(o.size) : `${bytes(o.sentBytes)} of ${bytes(o.size)}`}</span>
           {!done && <span className="num job-pct">{pct(o.sentBytes, o.size)}</span>}
           {o.status === "sending" && o.bps > 1 && <span className="num">{speed(o.bps)}</span>}
+          {o.status === "sending" && o.route === "relay" && <RelayedPill />}
           {!compact && left != null && <span className="num">{duration(left)} left</span>}
           <span className="faint truncate">to {o.deviceName}</span>
         </div>

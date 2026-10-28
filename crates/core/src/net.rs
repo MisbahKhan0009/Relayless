@@ -17,7 +17,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use iroh::endpoint::{presets, Connection, IdleTimeout, QuicTransportConfig, VarInt};
-use iroh::{Endpoint, SecretKey, TransportAddr};
+use iroh::{Endpoint, RelayMap, RelayMode, RelayUrl, SecretKey, TransportAddr};
+use tracing::warn;
 
 use crate::proto::ALPN;
 use crate::types::RouteInfo;
@@ -43,15 +44,36 @@ pub fn transport_config(congestion: &str) -> QuicTransportConfig {
     cfg.build()
 }
 
-/// Main endpoint: n0 relays for hole-punching coordination, DNS/pkarr lookup.
-pub async fn bind_main(secret: SecretKey, congestion: &str) -> Result<Endpoint> {
-    let ep = Endpoint::builder(presets::N0)
+/// Parses the user's relay list (one URL per line or comma separated).
+pub fn parse_relays(list: &str) -> Vec<RelayUrl> {
+    list.split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|s| s.contains('.') || s.contains("localhost"))
+        .filter_map(|s| {
+            let s = if s.contains("://") { s.to_string() } else { format!("https://{s}") };
+            match s.parse::<RelayUrl>() {
+                Ok(u) => Some(u),
+                Err(e) => {
+                    warn!("ignoring relay {s}: {e}");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+/// Main endpoint: DNS/pkarr lookup, and either n0's public relays or the
+/// user's own relays for hole-punching coordination and fallback.
+pub async fn bind_main(secret: SecretKey, congestion: &str, relays: &str) -> Result<Endpoint> {
+    let custom = parse_relays(relays);
+    let mut b = Endpoint::builder(presets::N0)
         .secret_key(secret)
         .alpns(vec![ALPN.to_vec()])
-        .transport_config(transport_config(congestion))
-        .bind()
-        .await?;
-    Ok(ep)
+        .transport_config(transport_config(congestion));
+    if !custom.is_empty() {
+        b = b.relay_mode(RelayMode::Custom(RelayMap::from_iter(custom)));
+    }
+    Ok(b.bind().await?)
 }
 
 /// Endpoint without relays or lookup, for local tests.
@@ -91,5 +113,20 @@ pub fn route_of(conn: &Connection) -> RouteInfo {
             }
         }
         None => RouteInfo::none(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_relay_lists() {
+        assert!(parse_relays("").is_empty());
+        let r = parse_relays("relay.example.org, https://eu.example.org\n  bad url with spaces");
+        let s: Vec<String> = r.iter().map(|u| u.to_string()).collect();
+        assert!(s[0].starts_with("https://relay.example.org"));
+        assert!(s[1].starts_with("https://eu.example.org"));
+        assert_eq!(s.len(), 2, "words that aren't host names are ignored");
     }
 }
