@@ -57,7 +57,7 @@ typography:
     fontWeight: 400
 shape:
   radius: "0 everywhere except data dots"
-  cut: "10px on panels, 14px on dialogs, 6px on buttons"
+  corner-marks: "2px L marks, 12px long on panels, 16px on dialogs; 1.5px by 6px on outlined buttons"
   hairline: "1px"
 spacing:
   xs: "4px"
@@ -74,7 +74,7 @@ spacing:
 
 **Creative North Star: "Signal HUD"**
 
-Relayless looks like a quiet instrument panel: a black ground with a faint dot grid, white at three strengths, one signal red, 1px lines and cut corners. It borrows the vocabulary of sci-fi HUD screens (segmented rings, tick scales, equalizer bars, node-and-wire diagrams, corner brackets, hazard stripes) and keeps the one rule those screens usually break: **every mark shows real data.** Relayless exists to prove privacy, not claim it, so a gauge that moves for decoration would undercut the product. The single exception is the wireframe globe in the Network panel, which stands for "online" and never shows where any device is.
+Relayless looks like a quiet instrument panel: a black ground with a faint dot grid, white at three strengths, one signal red, 1px lines and bright corner marks. It borrows the vocabulary of sci-fi HUD screens (segmented rings, tick scales, equalizer bars, node-and-wire diagrams, corner brackets, hazard stripes) and keeps the one rule those screens usually break: **every mark shows real data.** Relayless exists to prove privacy, not claim it, so a gauge that moves for decoration would undercut the product. The Network globe's turning is the one decorative motion; its markers are the real public relay regions, and it never shows where any device is.
 
 The screen stays calm at rest. Red appears only where something is happening right now or where the user can act. Hazard stripes appear only where the user is needed.
 
@@ -83,8 +83,8 @@ The project website (`website/`) still uses the previous "Quiet Ledger" look (gr
 **Key characteristics**
 - Black ground (`bg`) with a 24px dot grid; panels are opaque `surface` with a 1px hairline. No blur, no glass, no glows except one faint red wash behind the active transfer.
 - Uppercase Oxanium for labels, controls and titles; Figtree for sentences and file names; JetBrains Mono for every figure, ID, path, code and safety word.
-- Square geometry with cut corners: top left and bottom right of every panel are cut at 45°, and the cut has its own hairline.
-- One choreographed motion (calendar dots); packets moving along the link line while data flows; everything else is state feedback under 200ms.
+- Square geometry with corner marks: every panel keeps a 1px hairline border, and each of its four corners carries a brighter 2px L that sits on the hairline.
+- One choreographed motion (calendar dots); packets moving along the link line while data flows; selection and hover marks that slide between items (300ms); everything else is state feedback under 200ms.
 
 ## Colors
 
@@ -112,7 +112,7 @@ Status is carried by shape and pattern first, colour second:
 - **Magnitude White** (magnitude-bar): category bars that only show size.
 
 ### Named rules
-**The Real Data Rule.** No gauge, bar, ring or number may move for decoration. If a HUD element can't be bound to something the engine knows, leave it out. (The globe is the documented exception and has no data marks on it.)
+**The Real Data Rule.** No gauge, bar, ring or number may move for decoration. If a HUD element can't be bound to something the engine knows, leave it out. (The globe's rotation is the documented exception; its markers are real relay regions, never devices.)
 
 **The Red Means Now Rule.** Red marks what is happening now (arriving data, the live cursor, the active item) or where to act (primary buttons). Finished, verified data is white.
 
@@ -138,11 +138,11 @@ Status is carried by shape and pattern first, colour second:
 
 ## Layout
 
-Desktop is a 224px sidebar and a main column with a 56 to 60px topbar, then content centred to 1120px with 28px between sections. The sidebar lists numbered items (`01 OVERVIEW` …) with a counter instead of icons; the active item has a red index, a red wash and a 2px red left edge.
+Desktop is a 224px sidebar and a main column with a 56 to 60px topbar, then content centred to 1120px with 28px between sections. Sidebar items are a 17px line icon (pewter, 1.75 stroke) and an uppercase label; the active item has a red icon, a red wash and a 2px red left edge.
 
-The Overview opens with a two-column HUD row: the **active transfer** panel (about two thirds, with red corner brackets around it) and the **Network** panel. With nothing in progress, the left column shows the Share and Connect tiles instead. Below 1080px the row stacks.
+The Overview opens with a two-column HUD row: the **active transfer** panel (about two thirds, with red corner marks) and the **Network** panel. With nothing in progress, the left column shows the Share and Connect tiles instead. Below 1080px the row stacks.
 
-At 760px and below (the `usePhone` breakpoint) the sidebar becomes a bottom tab bar with icons and short labels; the active tab has a 2px red bar on its top edge. The active transfer shows in compact form on Phone Home, with the ring above its facts. Dialogs become bottom sheets with a cut top-left corner.
+At 760px and below (the `usePhone` breakpoint) the sidebar becomes a bottom tab bar with icons and short labels; the active tab has a 2px red bar on its top edge. The active transfer shows in compact form on Phone Home, with the ring above its facts. Dialogs become bottom sheets with corner marks on the top corners only.
 
 ## Elevation and depth
 
@@ -151,13 +151,16 @@ There is no translucency. Depth comes from hairlines and, for floating layers on
 ## Shapes
 
 - **Radius is 0** on every control and container. Only data marks stay round (calendar dots and the history wedges).
-- **Cut corners**: panels, stat tiles, hero tiles, side blocks, phone action tiles and dialogs are clipped at the top-left and bottom-right corners (10px; 14px on dialogs), with a hairline drawn along the cut. Buttons are cut at 6px.
-- **Corner brackets** (18px red L-marks, 8px outside the edge) mark the one panel that has focus on a screen: the active transfer. The selected calendar day gets small 8px brackets.
+- **Corner marks**: panels, stat tiles, hero tiles, side blocks, phone action tiles and dialogs are square with a 1px hairline, plus a 2px L at all four corners (12px arms in 78% white; 16px in full white on dialogs). Hovered tiles brighten their marks to full white; the phone Send tile's marks are red. Every outlined button (secondary, ghost, danger) gets small 1.5px by 6px marks; only the filled primary button stays plain.
+- **Red corner marks** (16px arms) replace the white ones on the one panel that has focus on a screen: the active transfer. The selected calendar day gets small 8px red brackets.
 
 ## Components
 
+### Sliding marks
+Every group of choices (sidebar, phone tab bar, Transfers tabs, segmented controls, the More menu) draws one selection mark and one hover mark and slides them between items over 300ms (`cubic-bezier(0.2, 0.8, 0.2, 1)`), instead of each item lighting up on its own. Hover is a faint white block that follows a mouse pointer (touch doesn't show it). Selection is the group's own mark: red wash with a red left edge in the sidebar and More menu, a red underline under tabs, a white block in segmented controls, a short red bar on top of the phone tab. The marks jump without sliding on first appearance and on layout changes, and stop sliding under reduced motion. Add the `slides` class and `useSlide` (`src/slide.ts`) to any new group.
+
 ### Buttons
-Cut-corner blocks with uppercase Oxanium labels. Primary: red fill, black label, brighter red on hover. Secondary: transparent with a strong hairline. Ghost: text-2, hover veil. Danger: red hairline and label. Press nudges the button down 1px.
+Square blocks with uppercase Oxanium labels. Primary: red fill, black label, brighter red on hover. Secondary: transparent with a strong hairline. Ghost: outlined like secondary but one step quieter (silver label, 55% white marks), brightening to white on hover. Danger: red hairline and label. Press nudges the button down 1px.
 
 ### Tags (status pills)
 20px tall, square, outlined, uppercase. See Status above for tone.
@@ -179,7 +182,7 @@ This device and the peer as two square nodes joined by a wire: solid white for a
 One bar per second over the last two minutes. Received bars rise above a baseline in white; sent bars hang below it in red; both use one scale, and each side gets height in proportion to its own peak. Events (paused, dropped, relay, direct) are dashed vertical lines with uppercase labels; dropped and relay are amber. Hover shows a crosshair and a tooltip with both speeds and any events at that second.
 
 ### Network panel
-Wireframe globe (decorative), online state, home relay, devices linked, and "Stored on servers: 0 bytes" in red.
+Online state, home relay, devices linked, "Stored on servers: 0 bytes" in red, and a slowly turning dotted Earth after cobe's "CDN" showcase ([cobe](https://github.com/shuding/cobe), WebGL, ~13 KB, MIT). Pewter-to-white land dots on a black sphere with a faint signal-red halo, inside an SVG tick ring. Each of iroh's four public relay regions (use1, usw1, euc1, aps1, from `iroh::defaults::prod`, placed at the metro its code names) carries a marker dot with a mono region tag just above it, on a dark fill with no outline; the home relay's dot and tag are red. Tags are positioned from cobe's marker anchors in script (no CSS anchor positioning needed), fade near the rim and behind the globe, and give way when they would overlap a tag nearer the centre. There are no arcs: relays don't send data to each other and Relayless never knows where a peer is, so any line between places would be invented. No device is ever placed on the globe. Offline, the halo and home marker turn grey and the land dims. It spins only while on screen, online and without reduced motion, at about 30 fps (one turn in about 40 s); without WebGL it falls back to an SVG wireframe globe.
 
 ### History calendar
 Seven-column grid of square day cells with a faint hairline. Dot area is proportional to bytes moved that day; days too small to draw at scale are hollow rings, and the legend names the threshold. Under Both, a two-way day splits into a white received wedge from 12 o'clock and a red sent wedge, divided by a dark seam. Today's numeral is red with a short red underline. The selected day gets a white 1px ring and red corner brackets. Dots scale in on month or filter change (the one choreographed motion; off under reduced motion).

@@ -20,6 +20,7 @@ import { bytes, dateTime, duration, isActive, mbit, speed, statusTone } from "..
 import { useStore } from "../store";
 import { LiveFlow, useFlowActive } from "../flow";
 import { Button, Empty, IconButton, Modal, Progress, RouteBadge, StatusIcon, StatusPill } from "../ui";
+import { useSlide } from "../slide";
 
 function explain(job: Job): string | null {
   switch (job.status) {
@@ -264,6 +265,7 @@ export default function Transfers() {
   const { jobs, outgoing, setPage, toast } = useStore();
   const flowActive = useFlowActive();
   const [filter, setFilter] = useState<Filter>("all");
+  const tabSlide = useSlide<HTMLDivElement>(".tab", ".tab.on");
   const list = useMemo(() => Object.values(jobs).sort((a, b) => b.createdAt - a.createdAt), [jobs]);
   const sendingNow = outgoing.filter((o) => o.status === "sending" || o.status === "waiting");
   const sentDone = outgoing.filter((o) => o.status === "verified" || o.status === "delivered");
@@ -311,7 +313,7 @@ export default function Transfers() {
         </p>
       )}
       <div>
-        <div className="tabs" role="tablist">
+        <div className="tabs slides" role="tablist" ref={tabSlide}>
           {(
             [
               ["all", "All"],

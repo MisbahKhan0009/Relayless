@@ -16,6 +16,7 @@ import {
 import type { JobStatus, RouteInfo } from "./api";
 import { STATUS_TEXT, statusTone, type Tone } from "./format";
 import { RouteGlyph } from "./hud";
+import { useSlide } from "./slide";
 
 export function Button({
   variant = "secondary",
@@ -232,8 +233,9 @@ export function Segmented<T extends string | number>({
   onChange: (v: T) => void;
   label: string;
 }) {
+  const slide = useSlide<HTMLDivElement>("button", "button.on");
   return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
+    <div className="segmented slides" role="radiogroup" aria-label={label} ref={slide}>
       {options.map((o) => (
         <button
           key={String(o.value)}

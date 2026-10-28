@@ -60,7 +60,7 @@ export function FocusTransfer({ job, index, count, compact = false }: { job: Job
   };
 
   return (
-    <div className={`bracketed focus-wrap ${compact ? "compact" : ""}`}>
+    <div className={`focus-wrap ${compact ? "compact" : ""}`}>
       <section className={`panel focus ${attention ? "attn" : ""}`} aria-label="Active transfer">
         <div className="focus-head">
           <span className="lab">Active transfer</span>

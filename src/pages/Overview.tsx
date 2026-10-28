@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { isActive, ago } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, RouteBadge, SectionHeader, usePhone } from "../ui";
-import { Globe } from "../hud";
+import { DotGlobe, relayRegion } from "../hud";
 import { FocusTransfer, useFocusJob } from "../focus";
 import { JobRow, SendRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
@@ -24,10 +24,14 @@ function relayHost(url: string | null): string {
   }
 }
 
-/** This device's network state. The globe is decoration; no locations are looked up. */
+/**
+ * This device's network state. The globe marks the public relay regions and
+ * which one is home; no device locations are looked up or shown.
+ */
 function NetworkPanel() {
   const { network, remotes, grants } = useStore();
   const online = !!network?.online;
+  const home = relayRegion(network?.relayUrl);
   const linked = new Set([
     ...remotes.filter((r) => r.status.state === "connected").map((r) => r.peerId),
     ...grants.filter((g) => g.connected).map((g) => g.peerId),
@@ -43,7 +47,7 @@ function NetworkPanel() {
         </span>
       </div>
       <div className="netp-globe">
-        <Globe size={150} online={online} />
+        <DotGlobe size={176} online={online} home={home} />
       </div>
       <dl className="netp-kv">
         <div>
