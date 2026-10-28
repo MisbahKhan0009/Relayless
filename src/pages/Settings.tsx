@@ -74,7 +74,7 @@ export default function Settings() {
   const streamsCap = (settings.parallelStreams * 1_000_000) / 0.2; // bytes/s at 200 ms RTT
 
   return (
-    <div className="page" style={{ maxWidth: 860 }}>
+    <div className="page page-settings">
       <section>
         <div className="sub-title">General</div>
         <div className="panel settings-group">

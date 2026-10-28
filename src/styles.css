@@ -300,8 +300,9 @@ a {
 }
 
 .page {
-  max-width: 1120px;
-  margin: 0 auto;
+  /* Pages use the whole content area, however wide the window is. */
+  width: 100%;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -4452,4 +4453,12 @@ html {
 }
 .two-col.even > div > .panel {
   flex: 1;
+}
+
+/* Full-width pages: settings rows span the window (label left, control
+   right), but descriptions keep a readable line length. */
+.page-settings .setting .hint,
+.page-settings .toggle-text .hint,
+.page-settings .notice {
+  max-width: 80ch;
 }

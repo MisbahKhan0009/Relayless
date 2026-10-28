@@ -138,7 +138,7 @@ Status is carried by shape and pattern first, colour second:
 
 ## Layout
 
-Desktop is a 224px sidebar and a main column with a 56 to 60px topbar, then content centred to 1120px with 28px between sections. Sidebar items are a 17px line icon (pewter, 1.75 stroke) and an uppercase label; the active item has a red icon, a red wash and a 2px red left edge.
+Desktop is a 224px sidebar and a main column with a 56 to 60px topbar, then content that fills the whole window width (24px 28px padding) with 28px between sections. Settings rows span the width too, label left and control right, with descriptions held to 80 characters a line. Sidebar items are a 17px line icon (pewter, 1.75 stroke) and an uppercase label; the active item has a red icon, a red wash and a 2px red left edge.
 
 The Overview opens with a two-column HUD row: the **active transfer** panel (about two thirds, with red corner marks) and the **Network** panel. With nothing in progress, the left column shows the Share and Connect tiles instead. Below 1080px the row stacks.
 
