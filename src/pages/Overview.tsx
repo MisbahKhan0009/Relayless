@@ -143,7 +143,7 @@ function DesktopOverview() {
         )}
       </div>
 
-      <div className="two-col">
+      <div className="two-col even">
         <div>
           <SectionHeader title="Devices" />
           <div className="panel row-list">

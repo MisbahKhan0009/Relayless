@@ -4432,3 +4432,24 @@ html {
     box-shadow: none;
   }
 }
+
+/* Section headings keep the height of a small button whether or not they
+   have one, so side-by-side cards start at the same level. */
+.section-head {
+  min-height: 28px;
+}
+@media (max-width: 760px) {
+  .section-head {
+    min-height: 36px;
+  }
+}
+/* Side-by-side cards (Overview: Devices and Recent activity) also end at the
+   same level. */
+.two-col.even > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.two-col.even > div > .panel {
+  flex: 1;
+}
