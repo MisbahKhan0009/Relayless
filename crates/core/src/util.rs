@@ -194,10 +194,33 @@ pub fn available_space(dir: &Path) -> Option<u64> {
 
 // ------------------------------------------------------------------ rate limiting
 
+/// Converts a limit from settings (KiB/s, 0 = unlimited) to bytes/s.
+/// Saturates instead of wrapping: release builds have overflow checks off,
+/// so a plain `kib * 1024` turns a huge limit into a tiny one.
+pub fn kib_to_bytes_per_sec(kib_per_sec: u64) -> u64 {
+    kib_per_sec.saturating_mul(1024)
+}
+
+/// Process-wide limiter counters (all transfers and peers in one direction).
+#[derive(Default, Debug)]
+pub struct LimiterStats {
+    /// Calls to `acquire`.
+    pub acquires: AtomicU64,
+    /// Calls that had to sleep at least once.
+    pub wait_events: AtomicU64,
+    /// Total time spent sleeping, in nanoseconds.
+    pub wait_ns: AtomicU64,
+    /// Bytes charged to the bucket while a limit was set.
+    pub charged_bytes: AtomicU64,
+    /// Longest single `acquire` wait, in nanoseconds.
+    pub max_wait_ns: AtomicU64,
+}
+
 /// Token bucket shared by all streams in one direction. 0 = unlimited.
 pub struct RateLimiter {
     bytes_per_sec: AtomicU64,
     state: parking_lot::Mutex<(f64, Instant)>,
+    pub stats: LimiterStats,
 }
 
 impl RateLimiter {
@@ -205,6 +228,7 @@ impl RateLimiter {
         RateLimiter {
             bytes_per_sec: AtomicU64::new(bytes_per_sec),
             state: parking_lot::Mutex::new((0.0, Instant::now())),
+            stats: LimiterStats::default(),
         }
     }
 
@@ -212,7 +236,51 @@ impl RateLimiter {
         self.bytes_per_sec.store(bytes_per_sec, Ordering::Relaxed);
     }
 
-    pub async fn acquire(&self, n: usize) {
+    /// Effective limit in bytes/s; 0 = unlimited.
+    pub fn rate(&self) -> u64 {
+        self.bytes_per_sec.load(Ordering::Relaxed)
+    }
+
+    /// Bucket capacity for a rate: a quarter second of data, at least 256 KiB.
+    pub fn burst_for(rate: u64) -> f64 {
+        (rate as f64 * 0.25).max(256.0 * 1024.0)
+    }
+
+    pub fn stats_json(&self) -> serde_json::Value {
+        let s = &self.stats;
+        let rate = self.rate();
+        serde_json::json!({
+            "scope": "process-wide, shared by all transfers and peers in this direction",
+            "effective_bytes_per_sec": if rate == 0 { serde_json::Value::Null } else { serde_json::json!(rate) },
+            "unlimited": rate == 0,
+            "burst_bytes": if rate == 0 { serde_json::Value::Null } else { serde_json::json!(Self::burst_for(rate) as u64) },
+            "acquires": s.acquires.load(Ordering::Relaxed),
+            "wait_events": s.wait_events.load(Ordering::Relaxed),
+            "wait_ms_total": s.wait_ns.load(Ordering::Relaxed) as f64 / 1e6,
+            "max_wait_ms": s.max_wait_ns.load(Ordering::Relaxed) as f64 / 1e6,
+            "charged_bytes": s.charged_bytes.load(Ordering::Relaxed),
+        })
+    }
+
+    /// Takes `n` bytes of budget, sleeping as needed. Returns the time spent
+    /// waiting (zero when unlimited or when tokens were available).
+    pub async fn acquire(&self, n: usize) -> Duration {
+        self.stats.acquires.fetch_add(1, Ordering::Relaxed);
+        let start = Instant::now();
+        let mut waited = false;
+        self.acquire_inner(n, &mut waited).await;
+        if !waited {
+            return Duration::ZERO;
+        }
+        let d = start.elapsed();
+        let ns = d.as_nanos().min(u64::MAX as u128) as u64;
+        self.stats.wait_events.fetch_add(1, Ordering::Relaxed);
+        self.stats.wait_ns.fetch_add(ns, Ordering::Relaxed);
+        self.stats.max_wait_ns.fetch_max(ns, Ordering::Relaxed);
+        d
+    }
+
+    async fn acquire_inner(&self, n: usize, waited: &mut bool) {
         loop {
             let rate = self.bytes_per_sec.load(Ordering::Relaxed);
             if rate == 0 {
@@ -221,7 +289,7 @@ impl RateLimiter {
             let wait = {
                 let mut st = self.state.lock();
                 let now = Instant::now();
-                let burst = (rate as f64 * 0.25).max(256.0 * 1024.0);
+                let burst = Self::burst_for(rate);
                 let elapsed = now.duration_since(st.1).as_secs_f64();
                 st.0 = (st.0 + elapsed * rate as f64).min(burst);
                 st.1 = now;
@@ -234,8 +302,14 @@ impl RateLimiter {
                 }
             };
             match wait {
-                None => return,
-                Some(d) => tokio::time::sleep(d).await,
+                None => {
+                    self.stats.charged_bytes.fetch_add(n as u64, Ordering::Relaxed);
+                    return;
+                }
+                Some(d) => {
+                    *waited = true;
+                    tokio::time::sleep(d).await
+                }
             }
         }
     }
@@ -277,5 +351,79 @@ mod tests {
         assert_eq!(sanitize_filename(".."), "file");
         assert_eq!(sanitize_filename(""), "file");
         assert!(sanitize_filename(&"x".repeat(500)).chars().count() <= 201);
+    }
+
+    #[test]
+    fn limit_conversion_is_kib_and_saturates() {
+        assert_eq!(kib_to_bytes_per_sec(0), 0, "0 stays unlimited");
+        assert_eq!(kib_to_bytes_per_sec(1), 1024);
+        assert_eq!(kib_to_bytes_per_sec(25 * 1024), 25 * 1024 * 1024);
+        // Regression: the old `kib * 1024` wraps in release builds (overflow
+        // checks off), turning a huge "limit" into a tiny one.
+        // 2^54 + 4 KiB/s is exactly representable as a JS number (the UI sends numbers).
+        let huge = (1u64 << 54) + 4;
+        assert_eq!(huge.wrapping_mul(1024), 4096, "old behaviour: wraps to 4 KiB/s");
+        assert_eq!(kib_to_bytes_per_sec(huge), u64::MAX, "new behaviour: saturates (effectively unlimited)");
+        assert_eq!((1u64 << 54).wrapping_mul(1024), 0, "old behaviour: wraps to 0, i.e. unlimited by accident");
+    }
+
+    #[tokio::test]
+    async fn unlimited_limiter_never_waits_or_charges() {
+        let l = RateLimiter::new(0);
+        for _ in 0..100 {
+            assert_eq!(l.acquire(1 << 20).await, Duration::ZERO);
+        }
+        assert_eq!(l.stats.acquires.load(Ordering::Relaxed), 100);
+        assert_eq!(l.stats.wait_events.load(Ordering::Relaxed), 0);
+        assert_eq!(l.stats.charged_bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(l.stats_json()["unlimited"], true);
+        assert!(l.stats_json()["effective_bytes_per_sec"].is_null());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn limiter_counts_waits_and_charged_bytes() {
+        let rate = 4 * 1024 * 1024;
+        let l = RateLimiter::new(rate);
+        let t = Instant::now();
+        let mut waited = Duration::ZERO;
+        for _ in 0..4 {
+            waited += l.acquire(1 << 20).await;
+        }
+        let elapsed = t.elapsed();
+        // 4 MiB at 4 MiB/s with a 1 MiB burst and an empty start: ~0.75-1 s.
+        assert!(elapsed >= Duration::from_millis(600), "too fast: {elapsed:?}");
+        assert!(elapsed < Duration::from_secs(3), "too slow: {elapsed:?}");
+        assert_eq!(l.stats.charged_bytes.load(Ordering::Relaxed), 4 << 20);
+        assert!(l.stats.wait_events.load(Ordering::Relaxed) >= 1);
+        let recorded = Duration::from_nanos(l.stats.wait_ns.load(Ordering::Relaxed));
+        assert_eq!(recorded, waited, "returned waits and counters agree");
+        assert!(recorded <= elapsed);
+        assert_eq!(l.stats_json()["burst_bytes"], 1024 * 1024);
+    }
+
+    /// With S streams sharing one bucket, each stream's next 1 MiB waits about
+    /// S x 1 MiB / rate. At low limits that exceeds the receiver's 90 s stall
+    /// timeout (e.g. 12 streams at 100 KiB/s: ~123 s per block per stream).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn limiter_wait_grows_with_concurrent_streams() {
+        let rate = 8 * 1024 * 1024;
+        let l = std::sync::Arc::new(RateLimiter::new(rate));
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..8 {
+            let l = l.clone();
+            set.spawn(async move { l.acquire(1 << 20).await });
+        }
+        let mut waits = Vec::new();
+        while let Some(w) = set.join_next().await {
+            waits.push(w.unwrap());
+        }
+        waits.sort();
+        let max = *waits.last().unwrap();
+        // 8 MiB requested, 2 MiB burst, 8 MiB/s: the last stream waits ~0.75 s.
+        assert!(max >= Duration::from_millis(600), "last waiter {max:?}");
+        assert!(max < Duration::from_secs(3));
+        assert_eq!(l.stats.charged_bytes.load(Ordering::Relaxed), 8 << 20);
+        let max_recorded = Duration::from_nanos(l.stats.max_wait_ns.load(Ordering::Relaxed));
+        assert_eq!(max_recorded, max);
     }
 }

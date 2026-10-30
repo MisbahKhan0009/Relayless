@@ -10,6 +10,7 @@ fn opts(dir: &Path, name: &str) -> CoreOptions {
         default_device_name: name.into(),
         default_download_dir: dir.join("downloads"),
         local_only: true,
+        diagnostics: true,
     }
 }
 

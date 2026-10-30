@@ -28,6 +28,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::db::{HistoryRow, JobRow, JobStats};
+use crate::diag;
 use crate::inner::Inner;
 use crate::net::route_of;
 use crate::proto::*;
@@ -127,12 +128,15 @@ pub struct PeerConn {
     conn: tokio::sync::Mutex<Option<Connection>>,
     pub route: watch::Sender<RouteInfo>,
     pub status: Mutex<PeerStatus>,
+    /// Chunk streams open to this sender across all jobs (diagnostics).
+    pub streams: diag::Gauge,
 }
 
 impl PeerConn {
     fn new(id: EndpointId) -> Self {
         PeerConn {
             conn: tokio::sync::Mutex::new(None),
+            streams: diag::Gauge::new(),
             route: watch::channel(RouteInfo::none()).0,
             status: Mutex::new(PeerStatus {
                 peer_id: id.to_string(),
@@ -216,26 +220,66 @@ async fn dial(inner: &Arc<Inner>, peer: EndpointId) -> Result<Connection, JobErr
 
 /// Returns a live, authorized connection to the sender, dialing if needed.
 pub async fn get_conn(inner: &Arc<Inner>, peer: EndpointId) -> Result<Connection, JobError> {
+    get_conn_traced(inner, peer, None).await
+}
+
+/// `get_conn`, recording reuse, lock wait, dial and Hello timings into `d`.
+async fn get_conn_traced(inner: &Arc<Inner>, peer: EndpointId, d: Option<&diag::TransferDiag>) -> Result<Connection, JobError> {
+    let start = Instant::now();
+    let at_ms = d.map(|d| d.at_ms()).unwrap_or(0.0);
+    let mut attempt = diag::ConnAttempt {
+        at_ms,
+        reused: false,
+        lock_wait_ms: 0.0,
+        dial_ms: None,
+        hello_ms: None,
+        total_ms: 0.0,
+        ok: false,
+        error: None,
+    };
+    let finish = |mut a: diag::ConnAttempt, ok: bool, err: Option<diag::ErrCat>| {
+        if let Some(d) = d {
+            a.total_ms = diag::ms(start.elapsed());
+            a.ok = ok;
+            a.error = err;
+            d.stages.conn_setup.record(start.elapsed());
+            if let Some(e) = err {
+                d.error(e);
+            }
+            d.conn_attempt(a);
+        }
+    };
     let pc = peer_conn(inner, peer);
     let mut guard = pc.conn.lock().await;
+    attempt.lock_wait_ms = diag::ms(start.elapsed());
     if let Some(c) = guard.as_ref() {
         if c.close_reason().is_none() {
+            attempt.reused = true;
+            finish(attempt, true, None);
             return Ok(c.clone());
         }
     }
     set_peer_state(inner, &pc, "connecting", None);
-    let conn = match dial(inner, peer).await {
+    let t = Instant::now();
+    let dialed = dial(inner, peer).await;
+    attempt.dial_ms = Some(diag::ms(t.elapsed()));
+    let conn = match dialed {
         Ok(c) => c,
         Err(e) => {
             set_peer_state(inner, &pc, "unreachable", Some(e.to_string()));
+            finish(attempt, false, Some(diag::ErrCat::ConnectFailed));
             return Err(e);
         }
     };
     let device = inner.settings.read().device_name.clone();
-    let hello = match hello(&conn, None, &device, |_| {}).await {
+    let t = Instant::now();
+    let hello_res = hello(&conn, None, &device, |_| {}).await;
+    attempt.hello_ms = Some(diag::ms(t.elapsed()));
+    let hello = match hello_res {
         Ok(h) => h,
         Err(e) => {
             set_peer_state(inner, &pc, "unreachable", Some(e.to_string()));
+            finish(attempt, false, Some(diag::ErrCat::ConnectFailed));
             return Err(e);
         }
     };
@@ -243,8 +287,10 @@ pub async fn get_conn(inner: &Arc<Inner>, peer: EndpointId) -> Result<Connection
         let msg = hello.message.unwrap_or_else(|| "The sender has removed this device's access.".into());
         set_peer_state(inner, &pc, "denied", Some(msg.clone()));
         conn.close(VarInt::from_u32(0), b"denied");
+        finish(attempt, false, Some(diag::ErrCat::Denied));
         return Err(JobError::Denied(msg));
     }
+    finish(attempt, true, None);
     let peer_s = peer.to_string();
     let _ = inner.db.upsert_remote(&peer_s, &hello.sender_name, None);
     let _ = inner.db.set_remote_shares(
@@ -349,6 +395,8 @@ pub struct JobHandle {
     active_ms: AtomicU64,
     active_since: Mutex<Option<Instant>>,
     peak_bps: Mutex<f64>,
+    /// Diagnostics for this run of the job (spawn to exit).
+    pub diag: Arc<diag::TransferDiag>,
 }
 
 impl JobHandle {
@@ -494,6 +542,7 @@ fn set_status(inner: &Inner, h: &JobHandle, status: JobStatus, error: Option<Str
         r.error = error.clone();
         r.updated_at = now_ms();
     }
+    h.diag.on_status(status.as_str());
     if status == JobStatus::Downloading {
         h.reset_speed();
     }
@@ -516,7 +565,17 @@ pub fn spawn_job(inner: &Arc<Inner>, job_id: &str) {
         .map(|r| r.name)
         .unwrap_or_else(|| short_peer(&row.peer_id));
     let verified_chunks = inner.db.verified_chunks(job_id).map(|v| v.len() as u64).unwrap_or(0);
+    let diag = Arc::new(diag::TransferDiag::new(
+        row.id.clone(),
+        "receiver",
+        diag::file_key(&row.share_id, &row.remote_path),
+        diag::file_ext(&row.remote_path),
+        short_peer(&row.peer_id),
+        row.size,
+    ));
+    diag.on_status(row.status.as_str());
     let h = Arc::new(JobHandle {
+        diag,
         id: row.id.clone(),
         cancel: inner.shutdown.child_token(),
         stop: Mutex::new(None),
@@ -537,7 +596,13 @@ pub fn spawn_job(inner: &Arc<Inner>, job_id: &str) {
     drop(jobs);
     let inner = inner.clone();
     tokio::spawn(async move {
+        let sampler = if inner.diag.enabled { Some(tokio::spawn(sample_loop(inner.clone(), h.clone()))) } else { None };
+        let resumed_from = h.verified.load(Ordering::Relaxed);
         run_job(&inner, &h).await;
+        if let Some(s) = sampler {
+            s.abort();
+        }
+        finish_diag(&inner, &h, resumed_from);
         inner.jobs.lock().remove(&h.id);
         if let Ok(Some(row)) = inner.db.get_job(&h.id) {
             inner.emit(CoreEvent::JobUpdated(snapshot(&inner, &row, None, Some(&h.peer_name))));
@@ -545,11 +610,149 @@ pub fn spawn_job(inner: &Arc<Inner>, job_id: &str) {
     });
 }
 
+/// Interval samples and route-change tracking for one job run (diagnostics on).
+async fn sample_loop(inner: Arc<Inner>, h: Arc<JobHandle>) {
+    let Ok(peer) = h.row.lock().peer_id.parse::<EndpointId>() else { return };
+    let pc = peer_conn(&inner, peer);
+    let mut rx = pc.route.subscribe();
+    let d = h.diag.clone();
+    let mut base = diag::SampleBase::new(&d);
+    let mut lost_prev: Option<u64> = None;
+    let mut tick = tokio::time::interval(diag::SAMPLE_INTERVAL);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    tick.tick().await;
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {}
+            r = rx.changed() => {
+                if r.is_err() {
+                    return;
+                }
+                let ri = rx.borrow_and_update().clone();
+                let to = diag::route_label(&ri.kind);
+                let from = d.route_current();
+                if d.observe_route(to, ri.rtt_ms) {
+                    info!(
+                        target: "relayless_core::diag",
+                        "route_change role=receiver id={} from={} to={} at_s={:.1} rtt_ms={:?}",
+                        d.id, from.unwrap_or(diag::Route::Unknown).as_str(), to.as_str(), d.at_ms() / 1000.0, ri.rtt_ms
+                    );
+                }
+                continue;
+            }
+        }
+        if !matches!(h.status(), JobStatus::Downloading | JobStatus::Verifying) {
+            base = diag::SampleBase::new(&d);
+            continue;
+        }
+        let mut extra = serde_json::json!({
+            "status": h.status().as_str(),
+            "connection_streams": pc.streams.current(),
+        });
+        if let Some(conn) = d.connection() {
+            // Route from the path API directly, compared with the cached value used for byte counting.
+            let actual = route_of(&conn);
+            let cached = pc.route.borrow().kind.clone();
+            let report = crate::net::path_report(&conn);
+            let lost = report.pointer("/totals/lost_packets").and_then(|v| v.as_u64());
+            let sel = report["paths"].as_array().and_then(|ps| ps.iter().find(|p| p["selected"] == true)).cloned();
+            let cwnd = sel.as_ref().and_then(|p| p["cwnd_bytes"].as_u64());
+            // This side's controller paces ACK-eliciting packets, including
+            // flow-control credit (MAX_STREAM_DATA) for the sender.
+            extra["pacing_rate_bytes_per_sec"] = sel.as_ref().map(|p| p["pacing_rate_bytes_per_sec"].clone()).unwrap_or_default();
+            extra["paths_open"] = serde_json::json!(report["paths"].as_array().map(|p| p.len()));
+            extra["route_api"] = serde_json::json!(diag::route_label(&actual.kind));
+            extra["route_cache_matches"] = serde_json::json!(actual.kind == cached);
+            extra["rtt_ms"] = serde_json::json!(actual.rtt_ms);
+            extra["cwnd_bytes"] = serde_json::json!(cwnd);
+            extra["lost_packets_delta"] = match (lost, lost_prev) {
+                (Some(l), Some(p)) => serde_json::json!(l.saturating_sub(p)),
+                _ => serde_json::Value::Null,
+            };
+            lost_prev = lost;
+        } else {
+            extra["route_api"] = serde_json::json!(diag::Route::Unknown);
+        }
+        let s = d.sample(&mut base, extra);
+        info!(
+            target: "relayless_core::diag",
+            "transfer_interval role=receiver id={} t_s={:.1} bytes={} interval_mib_s={} route={} streams={} conn_streams={} rtt_ms={} cwnd={} pacing_bytes_s={} lost_delta={} limiter_wait_ms={} read_wait_ms={}",
+            d.id,
+            s["t_ms"].as_f64().unwrap_or(0.0) / 1000.0,
+            s["bytes"],
+            s["interval_avg_mib_per_sec"],
+            s["route_api"].as_str().unwrap_or("unknown"),
+            s["active_streams"],
+            s["connection_streams"],
+            s["rtt_ms"],
+            s["cwnd_bytes"],
+            s["pacing_rate_bytes_per_sec"],
+            s["lost_packets_delta"],
+            s["limiter_wait_ms"],
+            s["read_wait_ms"],
+        );
+    }
+}
+
+/// Writes the job run's summary (diagnostics on) when the runner exits.
+fn finish_diag(inner: &Arc<Inner>, h: &Arc<JobHandle>, resumed_from: u64) {
+    let d = &h.diag;
+    if let Some(conn) = d.connection() {
+        let r = route_of(&conn);
+        d.observe_route(diag::route_label(&r.kind), r.rtt_ms);
+    }
+    let status = h.status();
+    let outcome = if status == JobStatus::Completed {
+        "completed"
+    } else {
+        match *h.stop.lock() {
+            Some(StopReason::Pause) => "paused",
+            Some(StopReason::Cancel) => "canceled",
+            Some(StopReason::Shutdown) => "shutdown",
+            None => status.as_str(),
+        }
+    };
+    if !inner.diag.enabled {
+        return;
+    }
+    let settings = inner.settings();
+    let pc = h.row.lock().peer_id.parse::<EndpointId>().ok().map(|p| peer_conn(inner, p));
+    // Workers per pass actually started (the setting, capped by missing chunks).
+    let passes = d.c.passes.load(Ordering::Relaxed);
+    let workers = d.c.workers_started.load(Ordering::Relaxed);
+    let extra = diag::SummaryExtra {
+        direct_only: settings.direct_only(),
+        resumed_from: Some(resumed_from),
+        download_limit_bps: Some(inner.download_limiter.rate()),
+        upload_limit_bps: Some(inner.upload_limiter.rate()),
+        parallel_streams: if passes > 0 && workers > 0 { Some(workers / passes) } else { None },
+        active_time: None,
+        transfer_extra: vec![
+            ("connection_streams_peak", serde_json::json!(d.c.conn_streams_peak.load(Ordering::Relaxed))),
+            ("connection_streams_now", pc.map(|p| serde_json::json!(p.streams.current())).unwrap_or_default()),
+            ("download_limiter_process", inner.download_limiter.stats_json()),
+            // This job is still registered while its summary is written.
+            ("other_jobs_running_at_end", serde_json::json!(inner.jobs.lock().len().saturating_sub(1))),
+        ],
+    };
+    if let Some(s) = d.summary(outcome, extra) {
+        if outcome == "shutdown" {
+            diag::emit_summary_sync(&inner.diag, d, &s);
+        } else {
+            diag::emit_summary(&inner.diag, d, &s);
+        }
+    }
+}
+
+/// Sleeps between attempts; the time counts as `backoff_wait` in diagnostics.
 async fn sleep_or_stop(h: &JobHandle, d: Duration) -> bool {
-    tokio::select! {
+    let t = Instant::now();
+    let stopped = tokio::select! {
         _ = tokio::time::sleep(d) => false,
         _ = h.cancel.cancelled() => true,
-    }
+    };
+    h.diag.stages.backoff_wait.record(t.elapsed());
+    stopped
 }
 
 async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
@@ -569,13 +772,15 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
         if !matches!(h.status(), JobStatus::Downloading | JobStatus::Verifying) {
             set_status(inner, h, JobStatus::Queued, None);
         }
+        let t = Instant::now();
         let _slot = tokio::select! {
             g = inner.slots.acquire() => g,
             _ = h.cancel.cancelled() => return,
         };
+        h.diag.stages.slot_wait.record(t.elapsed());
         set_status(inner, h, if attempt == 0 { JobStatus::Connecting } else { JobStatus::Reconnecting }, None);
         let conn = tokio::select! {
-            c = get_conn(inner, peer) => c,
+            c = get_conn_traced(inner, peer, Some(&h.diag)) => c,
             _ = h.cancel.cancelled() => return,
         };
         let conn = match conn {
@@ -605,6 +810,7 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
         if !inner.settings.read().direct_only() && attempt == 0 {
             let pc = peer_conn(inner, peer);
             let mut rx = pc.route.subscribe();
+            let t = Instant::now();
             if !rx.borrow().is_direct() {
                 let wait = tokio::time::timeout(DIRECT_GRACE, async {
                     loop {
@@ -613,11 +819,20 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
                         }
                     }
                 });
-                tokio::select! {
-                    _ = wait => {}
-                    _ = h.cancel.cancelled() => return,
+                let outcome = tokio::select! {
+                    r = wait => if r.is_err() { "timeout" } else if pc.route.borrow().is_direct() { "direct_found" } else { "route_watch_closed" },
+                    _ = h.cancel.cancelled() => "cancelled",
+                };
+                h.diag.stages.hole_punch_wait.record(t.elapsed());
+                h.diag.hole_punch(diag::HolePunch { wait_ms: diag::ms(t.elapsed()), outcome });
+                if outcome == "cancelled" {
+                    return;
                 }
+            } else {
+                h.diag.hole_punch(diag::HolePunch { wait_ms: 0.0, outcome: "already_direct" });
             }
+        } else if attempt == 0 {
+            h.diag.hole_punch(diag::HolePunch { wait_ms: 0.0, outcome: "not_applicable_direct_only" });
         }
 
         // Honour direct-only mode before sending any file bytes.
@@ -628,6 +843,7 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
                 set_status(inner, h, JobStatus::WaitingDirect, Some(
                     "Connected through a relay. Direct-only mode is on, so no file data is sent until a direct path opens.".into(),
                 ));
+                let t = Instant::now();
                 let waited = tokio::time::timeout(Duration::from_secs(20), async {
                     loop {
                         if rx.borrow().is_direct() {
@@ -642,7 +858,9 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
                     _ = waited => {}
                     _ = h.cancel.cancelled() => return,
                 }
+                h.diag.stages.direct_only_wait.record(t.elapsed());
                 if !pc.route.borrow().is_direct() {
+                    h.diag.error(diag::ErrCat::RelayPathActive);
                     drop(_slot);
                     if sleep_or_stop(h, Duration::from_secs(5)).await {
                         return;
@@ -695,6 +913,7 @@ async fn run_job(inner: &Arc<Inner>, h: &Arc<JobHandle>) {
                 attempt = attempt.saturating_add(1);
             }
             Err(JobError::RelayBlocked) => {
+                // Already counted per stream in fetch_chunk.
                 set_status(inner, h, JobStatus::WaitingDirect, Some(
                     "The connection switched to a relay. Waiting for a direct path (direct-only mode).".into(),
                 ));
@@ -757,20 +976,34 @@ fn prepare_partial(inner: &Inner, row: &JobRow) -> Result<File, JobError> {
 
 async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection, peer: EndpointId) -> Result<(), JobError> {
     let row = h.row.lock().clone();
+    let d = &h.diag;
+    d.set_connection(conn);
+    // Route straight from the connection's path API, not the cached watch.
+    let r = route_of(conn);
+    d.observe_route(diag::route_label(&r.kind), r.rtt_ms);
 
     // The sender's file must still be the exact version this job started with.
-    let resp = request(conn, &Request::Stat { share: row.share_id.clone(), path: row.remote_path.clone() }).await?;
+    let t = Instant::now();
+    let resp = request(conn, &Request::Stat { share: row.share_id.clone(), path: row.remote_path.clone() }).await;
+    d.stages.stat_request.record(t.elapsed());
+    let resp = resp.inspect_err(|e| d.error(job_err_cat(e)))?;
     match resp {
         Response::Stat { size, mtime_ms, dir } if !dir && size == row.size && mtime_ms == row.mtime_ms => {}
-        Response::Stat { .. } => return Err(JobError::SourceChanged),
+        Response::Stat { .. } => {
+            d.error(diag::ErrCat::SourceChanged);
+            return Err(JobError::SourceChanged);
+        }
         _ => return Err(JobError::Network("Unexpected reply.".into())),
     }
 
     let r2 = row.clone();
     let inner2 = inner.clone();
+    let t = Instant::now();
     let file = tokio::task::spawn_blocking(move || prepare_partial(&inner2, &r2))
         .await
-        .map_err(|e| JobError::Fatal(e.to_string()))??;
+        .map_err(|e| JobError::Fatal(e.to_string()))?;
+    d.stages.prepare_partial.record(t.elapsed());
+    let file = file.inspect_err(|e| d.error(job_err_cat(e)))?;
     let file = Arc::new(file);
 
     let verified: HashSet<u64> = inner
@@ -807,6 +1040,12 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
 
     let settings = inner.settings();
     let workers = (settings.parallel_streams as usize).min(missing.len()).max(1);
+    if !d.has_configuration() {
+        d.set_configuration(receiver_config_json(inner, &settings, &row, workers, missing.len()));
+    }
+    // Passes that start workers (Stat failures and empty passes don't count).
+    d.c.passes.fetch_add(1, Ordering::Relaxed);
+    d.c.workers_started.fetch_add(workers as u64, Ordering::Relaxed);
     let queue = Arc::new(Mutex::new(missing));
     let pass_cancel = h.cancel.child_token();
     let (done_tx, done_rx) = mpsc::unbounded_channel::<Progress>();
@@ -814,7 +1053,7 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
     let pc = peer_conn(inner, peer);
 
     let mut set = tokio::task::JoinSet::new();
-    for _ in 0..workers {
+    for worker in 0..workers {
         let inner = inner.clone();
         let h = h.clone();
         let conn = conn.clone();
@@ -826,16 +1065,19 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
         let pc = pc.clone();
         let partials = partials.clone();
         set.spawn(async move {
+            let born = Instant::now();
+            let r = async {
             let mut corrupt_retries = 0u32;
             loop {
                 if cancel.is_cancelled() {
                     return Err(JobError::Stopped);
                 }
                 let Some(idx) = queue.lock().pop_front() else { return Ok(()) };
-                match fetch_chunk(&inner, &conn, &file, &row, idx, &cancel, &pc, &partials, &done_tx, &h).await {
+                match fetch_chunk(&inner, &conn, &file, &row, idx, &cancel, &pc, &partials, &done_tx, &h, worker as u32).await {
                     Ok(()) => {}
                     Err(ChunkError::Corrupt) if corrupt_retries < 5 => {
                         corrupt_retries += 1;
+                        h.diag.c.chunk_retries.fetch_add(1, Ordering::Relaxed);
                         inner.log("warning", &format!("A block of {} failed verification; fetching it again", row.display_name), Some(&row.id));
                         queue.lock().push_back(idx);
                     }
@@ -852,6 +1094,10 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
                     }
                 }
             }
+            }
+            .await;
+            h.diag.stages.worker_time.record(born.elapsed());
+            r
         });
     }
     drop(done_tx);
@@ -906,6 +1152,72 @@ enum Progress {
     Done { idx: u64, hash: [u8; 32] },
 }
 
+/// Read-wait accumulator: one stage record per block (or per second of
+/// waiting on slow links) instead of one per `recv.read` call.
+struct ReadAcc<'a> {
+    d: &'a diag::TransferDiag,
+    wait: Duration,
+}
+
+impl ReadAcc<'_> {
+    fn flush(&mut self) {
+        if !self.wait.is_zero() {
+            self.d.stages.read_wait.record(self.wait);
+            self.wait = Duration::ZERO;
+        }
+    }
+}
+
+impl Drop for ReadAcc<'_> {
+    fn drop(&mut self) {
+        self.flush();
+    }
+}
+
+/// Diagnostic category for a job error (diagnostics only).
+fn job_err_cat(e: &JobError) -> diag::ErrCat {
+    use diag::ErrCat as C;
+    match e {
+        JobError::Network(_) => C::ConnectionLost,
+        JobError::Busy(_) => C::RemoteError,
+        JobError::SourceChanged => C::SourceChanged,
+        JobError::Missing(_) => C::RemoteError,
+        JobError::Denied(_) => C::Denied,
+        JobError::RelayBlocked => C::RelayPathActive,
+        JobError::Disk(_) => C::ReceiverDiskWrite,
+        JobError::Fatal(_) => C::Unknown,
+        JobError::Stopped => C::Cancelled,
+    }
+}
+
+/// Configuration snapshot for a receiver summary.
+fn receiver_config_json(inner: &Inner, s: &crate::types::Settings, row: &JobRow, workers: usize, missing: usize) -> serde_json::Value {
+    serde_json::json!({
+        "chunk_size_bytes": row.chunk_size,
+        "chunk_size_source": "stored with the job when it was created",
+        "chunk_size_setting_mib_now": s.chunk_size_mib,
+        "block_size_bytes": BLOCK,
+        "total_chunks": row.total_chunks,
+        "chunks_missing_at_first_pass": missing,
+        "parallel_streams_setting": s.parallel_streams,
+        "workers_first_pass": workers,
+        "max_concurrent_jobs": s.max_concurrent_jobs,
+        "connection_mode": s.connection_mode,
+        "transport": crate::net::transport_json(inner.congestion_active),
+        "congestion_control_setting": s.congestion,
+        "download_limit": diag::limit_json(s.download_limit_kbps, inner.download_limiter.rate()),
+        "upload_limit_this_device": diag::limit_json(s.upload_limit_kbps, inner.upload_limiter.rate()),
+        "timeouts_ms": {
+            "connect": CONNECT_TIMEOUT.as_millis() as u64,
+            "response_header": READ_TIMEOUT.as_millis() as u64,
+            "stall": STALL_TIMEOUT.as_millis() as u64,
+            "direct_grace": DIRECT_GRACE.as_millis() as u64,
+        },
+        "commit_interval_ms": COMMIT_INTERVAL.as_millis() as u64,
+        "local_mode": inner.local_mode,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn fetch_chunk(
     inner: &Arc<Inner>,
@@ -918,15 +1230,76 @@ async fn fetch_chunk(
     partials: &Mutex<HashMap<u64, (u64, Vec<[u8; 32]>)>>,
     tx: &mpsc::UnboundedSender<Progress>,
     h: &JobHandle,
+    worker: u32,
 ) -> Result<(), ChunkError> {
+    let d = &h.diag;
+    let from = partials.lock().get(&idx).map(|(done, _)| *done).unwrap_or(0);
+    let route = diag::route_label(&pc.route.borrow().kind);
+    let mut trace = diag::ChunkTrace::new(d.origin, idx, Some(worker), from, Some(route));
+    let mut cat: Option<diag::ErrCat> = None;
+    d.c.chunks_started.fetch_add(1, Ordering::Relaxed);
+    if from > 0 {
+        d.c.chunks_resumed.fetch_add(1, Ordering::Relaxed);
+    }
+    let r = fetch_chunk_inner(inner, conn, file, row, idx, cancel, pc, partials, tx, h, &mut trace, &mut cat).await;
+    let (outcome, cat) = match &r {
+        Ok(()) => ("completed", None),
+        // Stopped by pause, shutdown or a sibling worker's failure: counted in
+        // chunks_stopped, not as an error, so it can't mask the real cause.
+        Err(ChunkError::Job(JobError::Stopped)) => ("stopped", None),
+        Err(ChunkError::Corrupt) => ("failed", Some(diag::ErrCat::HashMismatch)),
+        Err(ChunkError::Job(e)) => ("failed", Some(cat.unwrap_or_else(|| job_err_cat(e)))),
+    };
+    if let Some(c) = cat {
+        d.error(c);
+    }
+    d.finish_chunk(trace.finish(outcome, cat, true));
+    r
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn fetch_chunk_inner(
+    inner: &Arc<Inner>,
+    conn: &Connection,
+    file: &Arc<File>,
+    row: &JobRow,
+    idx: u64,
+    cancel: &CancellationToken,
+    pc: &PeerConn,
+    partials: &Mutex<HashMap<u64, (u64, Vec<[u8; 32]>)>>,
+    tx: &mpsc::UnboundedSender<Progress>,
+    h: &JobHandle,
+    trace: &mut diag::ChunkTrace,
+    cat: &mut Option<diag::ErrCat>,
+) -> Result<(), ChunkError> {
+    use diag::ErrCat as C;
+    let d = &h.diag;
     let direct_only = inner.settings.read().direct_only();
     if direct_only && !pc.route.borrow().is_direct() {
+        *cat = Some(C::RelayPathActive);
         return Err(JobError::RelayBlocked.into());
     }
     let len = chunk_len(row, idx);
     let (mut done, mut hashes) = partials.lock().get(&idx).cloned().unwrap_or((0, Vec::new()));
-    let (mut send, mut recv) = conn.open_bi().await.map_err(net)?;
-    write_frame(
+    let t = Instant::now();
+    let opened = conn.open_bi().await;
+    let open_d = t.elapsed();
+    d.stages.stream_open.record(open_d);
+    trace.rec.stream_open_ms = Some(diag::ms(open_d));
+    if open_d >= diag::SLOW_STREAM_OPEN {
+        d.c.slow_stream_opens.fetch_add(1, Ordering::Relaxed);
+    }
+    let (mut send, mut recv) = opened.map_err(|e| {
+        *cat = Some(C::StreamOpenFailed);
+        net(e)
+    })?;
+    // Active from stream open until this function returns.
+    let _job_stream = d.streams.enter();
+    let _peer_stream = pc.streams.enter();
+    // Streams open to this sender (all jobs) when this one started.
+    d.c.conn_streams_peak.fetch_max(pc.streams.current(), Ordering::Relaxed);
+    let t = Instant::now();
+    let wrote = write_frame(
         &mut send,
         &Request::Chunk {
             share: row.share_id.clone(),
@@ -940,18 +1313,51 @@ async fn fetch_chunk(
         },
     )
     .await
-    .map_err(net)?;
-    send.finish().map_err(net)?;
-    let resp: Response = tokio::select! {
-        r = tokio::time::timeout(READ_TIMEOUT, read_frame(&mut recv)) => r
-            .map_err(|_| JobError::Network("The sender stopped responding.".into()))?
-            .map_err(net)?,
-        _ = cancel.cancelled() => return Err(JobError::Stopped.into()),
+    .and_then(|_| send.finish().map_err(anyhow::Error::from));
+    d.stages.request_write.record(t.elapsed());
+    trace.rec.request_write_ms = Some(diag::ms(t.elapsed()));
+    wrote.map_err(|e| {
+        *cat = Some(match diag::classify_anyhow(&e) {
+            C::Unknown => C::RequestWriteFailed,
+            c => c,
+        });
+        net(e)
+    })?;
+    let t = Instant::now();
+    let resp = tokio::select! {
+        r = tokio::time::timeout(READ_TIMEOUT, read_frame::<Response>(&mut recv)) => Some(r),
+        _ = cancel.cancelled() => None,
+    };
+    d.stages.header_wait.record(t.elapsed());
+    trace.rec.header_wait_ms = Some(diag::ms(t.elapsed()));
+    let resp: Response = match resp {
+        None => return Err(JobError::Stopped.into()),
+        Some(Err(_)) => {
+            *cat = Some(C::ResponseTimeout);
+            return Err(JobError::Network("The sender stopped responding.".into()).into());
+        }
+        Some(Ok(Err(e))) => {
+            *cat = Some(diag::classify_anyhow(&e));
+            return Err(net(e).into());
+        }
+        Some(Ok(Ok(r))) => r,
     };
     match resp {
         Response::Chunk { len: l } if l == len - done => {}
-        Response::Error { code, message } => return Err(remote_err(code, message).into()),
-        _ => return Err(JobError::Network("Unexpected chunk reply.".into()).into()),
+        Response::Error { code, message } => {
+            *cat = Some(match code {
+                ErrCode::SourceChanged => C::SourceChanged,
+                ErrCode::RelayBlocked => C::RelayPathActive,
+                ErrCode::Denied => C::Denied,
+                ErrCode::BadRequest => C::BadRequest,
+                _ => C::RemoteError,
+            });
+            return Err(remote_err(code, message).into());
+        }
+        _ => {
+            *cat = Some(C::Unknown);
+            return Err(JobError::Network("Unexpected chunk reply.".into()).into());
+        }
     }
 
     let base = idx * row.chunk_size;
@@ -969,10 +1375,19 @@ async fn fetch_chunk(
     }
     while done < len {
         let n = ((len - done) as usize).min(BLOCK);
-        inner.download_limiter.acquire(n).await;
+        let w = inner.download_limiter.acquire(n).await;
+        if !w.is_zero() {
+            d.stages.limiter_wait.record_bytes(w, n as u64);
+            d.c.limiter_waits.fetch_add(1, Ordering::Relaxed);
+            trace.limiter(w);
+        }
         let mut arriving = Arriving(&h.arriving, 0);
+        // Read wait for this block, recorded once per block or per second of
+        // waiting (on drop too, so early returns are counted).
+        let mut acc = ReadAcc { d, wait: Duration::ZERO };
         let mut got = 0usize;
         while got < n {
+            let t = Instant::now();
             let r = tokio::select! {
                 r = tokio::time::timeout(STALL_TIMEOUT, recv.read(&mut buf[got..n])) => r,
                 _ = cancel.cancelled() => {
@@ -980,37 +1395,99 @@ async fn fetch_chunk(
                     return Err(JobError::Stopped.into());
                 }
             };
-            match r.map_err(|_| JobError::Network("No data arrived for 90 seconds.".into()))?.map_err(net)? {
+            let rd = t.elapsed();
+            acc.wait += rd;
+            trace.read_wait(rd);
+            if acc.wait >= Duration::from_secs(1) {
+                // Slow link: keep interval samples live instead of waiting
+                // minutes for the block to finish.
+                acc.flush();
+            }
+            let r = match r {
+                Err(_) => {
+                    *cat = Some(C::StallTimeout);
+                    return Err(JobError::Network("No data arrived for 90 seconds.".into()).into());
+                }
+                Ok(r) => r.map_err(|e| {
+                    *cat = Some(diag::classify_read(&e));
+                    net(e)
+                })?,
+            };
+            match r {
                 Some(k) => {
                     got += k;
                     arriving.1 += k as u64;
                     h.arriving.fetch_add(k as u64, Ordering::Relaxed);
+                    // One relaxed add per read keeps the interval byte rate live.
+                    d.c.net_bytes.fetch_add(k as u64, Ordering::Relaxed);
                 }
-                None => return Err(JobError::Network("The sender closed the stream early.".into()).into()),
+                None => {
+                    *cat = Some(C::StreamClosedEarly);
+                    return Err(JobError::Network("The sender closed the stream early.".into()).into());
+                }
             }
         }
+        let t = Instant::now();
         tokio::select! {
             r = tokio::time::timeout(STALL_TIMEOUT, recv.read_exact(&mut want)) => {
-                r.map_err(|_| JobError::Network("No data arrived for 90 seconds.".into()))?.map_err(net)?;
+                let rd = t.elapsed();
+                acc.wait += rd;
+                trace.read_wait(rd);
+                match r {
+                    Err(_) => {
+                        *cat = Some(C::StallTimeout);
+                        return Err(JobError::Network("No data arrived for 90 seconds.".into()).into());
+                    }
+                    Ok(r) => r.map_err(|e| {
+                        *cat = Some(diag::classify_read_exact(&e));
+                        net(e)
+                    })?,
+                }
             }
             _ = cancel.cancelled() => {
                 let _ = recv.stop(VarInt::from_u32(0));
                 return Err(JobError::Stopped.into());
             }
         }
+        drop(acc);
         // Verify, then write; nothing unverified ever counts as progress.
         let f = file.clone();
         let pos = base + done;
-        let (b, r) = tokio::task::spawn_blocking(move || {
+        let queued = Instant::now();
+        let (b, r, hash_d, write_d) = tokio::task::spawn_blocking(move || {
             let b = buf;
+            let t = Instant::now();
             let got = *blake3::hash(&b[..n]).as_bytes();
+            let hash_d = t.elapsed();
+            let t = Instant::now();
             let r = if got != want { Ok(false) } else { write_all_at(&f, &b[..n], pos).map(|_| true) };
-            (b, r)
+            let write_d = t.elapsed();
+            (b, r, hash_d, write_d)
         })
         .await
         .map_err(|e| JobError::Fatal(e.to_string()))?;
+        let pool_wait = queued.elapsed().saturating_sub(hash_d + write_d);
+        d.stages.hash.record_bytes(hash_d, n as u64);
+        d.stages.blocking_queue.record(pool_wait);
+        trace.hash(hash_d);
+        trace.blocking_queue(pool_wait);
         buf = b;
-        if !r.map_err(|e| disk_err(e, "writing data"))? {
+        let ok = match r {
+            Ok(ok) => {
+                if ok {
+                    d.stages.disk_write.record_bytes(write_d, n as u64);
+                    trace.disk_write(write_d);
+                }
+                ok
+            }
+            Err(e) => {
+                *cat = Some(C::ReceiverDiskWrite);
+                return Err(disk_err(e, "writing data").into());
+            }
+        };
+        if !ok {
+            d.c.hash_failures.fetch_add(1, Ordering::Relaxed);
+            trace.rec.hash_failures += 1;
             let _ = recv.stop(VarInt::from_u32(0));
             return Err(ChunkError::Corrupt);
         }
@@ -1019,15 +1496,21 @@ async fn fetch_chunk(
         // Move the block from "arriving" to "verified, waiting to be saved".
         h.inflight.fetch_add(n as u64, Ordering::Relaxed);
         drop(arriving);
-        if pc.route.borrow().is_direct() {
+        let route = pc.route.borrow().kind.clone();
+        if route == "direct" {
             h.direct_bytes.fetch_add(n as u64, Ordering::Relaxed);
         } else {
             h.relay_bytes.fetch_add(n as u64, Ordering::Relaxed);
         }
+        d.c.add_route_bytes(diag::route_label(&route), n as u64);
+        d.c.bytes.fetch_add(n as u64, Ordering::Relaxed);
+        d.c.blocks.fetch_add(1, Ordering::Relaxed);
+        trace.block(n as u64);
         partials.lock().insert(idx, (done, hashes.clone()));
         let _ = tx.send(Progress::Partial { idx, done, hashes: hashes.clone() });
         blocks += 1;
         if direct_only && blocks % 8 == 0 && !pc.route.borrow().is_direct() {
+            *cat = Some(C::RelayPathActive);
             let _ = recv.stop(VarInt::from_u32(0));
             return Err(JobError::RelayBlocked.into());
         }
@@ -1069,16 +1552,26 @@ async fn commit_loop(
             + parts.iter().map(|(i, (d, _))| d.saturating_sub(base(i))).sum::<u64>();
         if !open || last.elapsed() >= COMMIT_INTERVAL || delta >= 256 * 1024 * 1024 {
             let f = file.clone();
-            tokio::task::spawn_blocking(move || f.sync_data())
-                .await
-                .map_err(|e| JobError::Fatal(e.to_string()))?
-                .map_err(|e| disk_err(e, "saving data to disk"))?;
+            let t = Instant::now();
+            let synced = tokio::task::spawn_blocking(move || {
+                let t = Instant::now();
+                (f.sync_data(), t.elapsed())
+            })
+            .await
+            .map_err(|e| JobError::Fatal(e.to_string()))?;
+            let (synced, sync_d) = synced;
+            h.diag.stages.fsync.record(sync_d);
+            h.diag.stages.blocking_queue.record(t.elapsed().saturating_sub(sync_d));
+            synced.map_err(|e| {
+                h.diag.error(diag::ErrCat::ReceiverDiskWrite);
+                disk_err(e, "saving data to disk")
+            })?;
             let new_verified = h.verified.load(Ordering::Relaxed) + delta;
             let plist: Vec<crate::db::Partial> = parts.drain().map(|(i, (d, hs))| (i, d, hs)).collect();
-            inner
-                .db
-                .commit_progress(&row.id, &dones, &plist, new_verified, &h.stats())
-                .map_err(|e| JobError::Fatal(format!("database error: {e}")))?;
+            let t = Instant::now();
+            let committed_db = inner.db.commit_progress(&row.id, &dones, &plist, new_verified, &h.stats());
+            h.diag.stages.db_commit.record(t.elapsed());
+            committed_db.map_err(|e| JobError::Fatal(format!("database error: {e}")))?;
             for (i, _) in &dones {
                 committed.remove(i);
             }
@@ -1107,7 +1600,10 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
     let cancel = h.cancel.clone();
     let inner2 = inner.clone();
     let row2 = row.clone();
-    let bad: Vec<u64> = tokio::task::spawn_blocking(move || -> Result<Vec<u64>, JobError> {
+    let hd = h.clone();
+    let verify_start = Instant::now();
+    let bad = tokio::task::spawn_blocking(move || -> Result<Vec<u64>, JobError> {
+        let st = &hd.diag.stages;
         let f = File::open(&row2.temp_path).map_err(|e| disk_err(e, "verifying"))?;
         let mut buf = vec![0u8; BLOCK];
         let mut bad = Vec::new();
@@ -1123,12 +1619,16 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
             let mut remaining = chunk_len(&row2, *idx);
             while remaining > 0 {
                 let k = (remaining as usize).min(BLOCK);
+                let t = Instant::now();
                 read_exact_at(&f, &mut buf[..k], pos).map_err(|e| disk_err(e, "verifying"))?;
+                st.final_read.record_bytes(t.elapsed(), k as u64);
+                let t = Instant::now();
                 if *scheme == crate::db::SCHEME_BLOCKS {
                     blocks.push(*blake3::hash(&buf[..k]).as_bytes());
                 } else {
                     whole.update(&buf[..k]);
                 }
+                st.final_hash.record_bytes(t.elapsed(), k as u64);
                 pos += k as u64;
                 remaining -= k as u64;
             }
@@ -1148,9 +1648,13 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
         Ok(bad)
     })
     .await
-    .map_err(|e| JobError::Fatal(e.to_string()))??;
+    .map_err(|e| JobError::Fatal(e.to_string()))?;
+    h.diag.stages.final_verification.record_bytes(verify_start.elapsed(), row.size);
+    let bad: Vec<u64> = bad?;
 
     if !bad.is_empty() {
+        h.diag.note(format!("observation: {} chunk(s) failed the final re-read check and were queued again", bad.len()));
+        h.diag.c.chunk_retries.fetch_add(bad.len() as u64, Ordering::Relaxed);
         let bad_bytes: u64 = bad.iter().map(|i| chunk_len(&row, *i)).sum();
         let new_verified = h.verified.load(Ordering::Relaxed).saturating_sub(bad_bytes);
         inner.db.remove_chunks(&row.id, &bad, new_verified).map_err(|e| JobError::Fatal(e.to_string()))?;
@@ -1165,6 +1669,7 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
 
     let dest = PathBuf::from(&row.dest_path);
     let temp = row.temp_path.clone();
+    let t = Instant::now();
     let final_path = tokio::task::spawn_blocking(move || -> Result<PathBuf, JobError> {
         let target = unique_path(&dest);
         std::fs::rename(&temp, &target).map_err(|e| disk_err(e, "renaming the finished file"))?;
@@ -1172,6 +1677,7 @@ async fn verify_and_finalize(inner: &Arc<Inner>, h: &Arc<JobHandle>) -> Result<b
     })
     .await
     .map_err(|e| JobError::Fatal(e.to_string()))??;
+    h.diag.stages.rename.record(t.elapsed());
     let final_s = final_path.to_string_lossy().to_string();
     inner.db.set_job_completed(&row.id, &final_s).map_err(|e| JobError::Fatal(e.to_string()))?;
     {

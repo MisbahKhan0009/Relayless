@@ -1,6 +1,7 @@
 //! Relayless core: direct, encrypted, resumable, verified file transfer.
 
 mod db;
+pub mod diag;
 mod inner;
 pub mod invite;
 mod net;
@@ -42,6 +43,10 @@ pub struct CoreOptions {
     pub default_download_dir: PathBuf,
     /// Loopback-only endpoint without relays or lookup (tests).
     pub local_only: bool,
+    /// Write per-transfer diagnostic summaries to `<data_dir>/diagnostics/`
+    /// and log interval/summary lines. The `RELAYLESS_DIAG` environment
+    /// variable (0/1) overrides this.
+    pub diagnostics: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -93,20 +98,52 @@ impl Core {
         }
         let settings = settings.sanitized();
         db.save_settings(&settings)?;
+        // Test-only: A/B congestion control on loopback without editing tests.
+        // Applied to the endpoint only, never saved.
+        let bind_congestion = match (opts.local_only, std::env::var("RELAYLESS_TEST_CONGESTION")) {
+            (true, Ok(c)) => c,
+            _ => settings.congestion.clone(),
+        };
         let secret = load_or_create_key(&opts.data_dir.join("identity.key"))?;
         let endpoint = if opts.local_only {
-            net::bind_local(secret).await?
+            net::bind_local(secret, &bind_congestion).await?
         } else {
             net::bind_main(secret, &settings.congestion, &settings.relay_urls).await?
         };
+        let congestion_active = net::congestion_name(&bind_congestion);
+        let diag = diag::DiagConfig::resolve(
+            opts.diagnostics,
+            std::env::var(diag::ENV_VAR).ok().as_deref(),
+            &opts.data_dir,
+        );
+        tracing::info!(
+            target: "relayless_core::diag",
+            "engine_config diagnostics={} congestion_active={} congestion_setting={} parallel_streams={} max_concurrent_jobs={} chunk_size_mib={} download_limit_kib_s={} upload_limit_kib_s={} connection_mode={} stream_window={} conn_window={} send_window={} max_bidi_streams={}",
+            diag.enabled,
+            congestion_active,
+            settings.congestion,
+            settings.parallel_streams,
+            settings.max_concurrent_jobs,
+            settings.chunk_size_mib,
+            settings.download_limit_kbps,
+            settings.upload_limit_kbps,
+            settings.connection_mode,
+            net::STREAM_WINDOW,
+            net::CONN_WINDOW,
+            net::SEND_WINDOW,
+            net::MAX_BIDI_STREAMS,
+        );
         let (events, _) = broadcast::channel(1024);
         let inner = Arc::new(Inner {
             db,
             endpoint,
             data_dir: opts.data_dir.clone(),
-            upload_limiter: RateLimiter::new(settings.upload_limit_kbps * 1024),
-            download_limiter: RateLimiter::new(settings.download_limit_kbps * 1024),
+            upload_limiter: RateLimiter::new(util::kib_to_bytes_per_sec(settings.upload_limit_kbps)),
+            download_limiter: RateLimiter::new(util::kib_to_bytes_per_sec(settings.download_limit_kbps)),
             slots: JobSlots::new(settings.max_concurrent_jobs as usize),
+            diag,
+            congestion_active,
+            send_diags: Mutex::new(Default::default()),
             settings: RwLock::new(settings),
             events,
             shutdown: CancellationToken::new(),
@@ -160,6 +197,12 @@ impl Core {
         self.inner.data_dir.clone()
     }
 
+    /// Folder with `transfers.jsonl` (one JSON summary per transfer), and
+    /// whether diagnostics output is on.
+    pub fn diagnostics(&self) -> (bool, PathBuf) {
+        (self.inner.diag.enabled, self.inner.diag.dir.clone())
+    }
+
     // ------------------------------------------------------------------ settings
 
     pub fn settings(&self) -> Settings {
@@ -176,8 +219,27 @@ impl Core {
             s.download_dir = old.download_dir.clone();
         }
         self.inner.db.save_settings(&s)?;
-        self.inner.upload_limiter.set_rate(s.upload_limit_kbps * 1024);
-        self.inner.download_limiter.set_rate(s.download_limit_kbps * 1024);
+        self.inner.upload_limiter.set_rate(util::kib_to_bytes_per_sec(s.upload_limit_kbps));
+        self.inner.download_limiter.set_rate(util::kib_to_bytes_per_sec(s.download_limit_kbps));
+        if s.download_limit_kbps != old.download_limit_kbps
+            || s.upload_limit_kbps != old.upload_limit_kbps
+            || s.parallel_streams != old.parallel_streams
+            || s.congestion != old.congestion
+            || s.connection_mode != old.connection_mode
+        {
+            tracing::info!(
+                target: "relayless_core::diag",
+                "settings_changed download_limit_kib_s={} upload_limit_kib_s={} effective_download_bytes_s={} effective_upload_bytes_s={} parallel_streams={} connection_mode={} congestion_setting={} congestion_active={} (congestion applies after restart)",
+                s.download_limit_kbps,
+                s.upload_limit_kbps,
+                self.inner.download_limiter.rate(),
+                self.inner.upload_limiter.rate(),
+                s.parallel_streams,
+                s.connection_mode,
+                s.congestion,
+                self.inner.congestion_active,
+            );
+        }
         self.inner.slots.set_max(s.max_concurrent_jobs as usize);
         *self.inner.settings.write() = s.clone();
         if s.history_retention != old.history_retention && prune_history(&self.inner) > 0 {
@@ -913,6 +975,7 @@ impl Core {
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
+        sender::flush_send_diags(&self.inner, None, "shutdown");
         let codes: Vec<_> = self.inner.short_codes.lock().drain().map(|(_, c)| c).collect();
         for c in codes {
             let _ = tokio::time::timeout(Duration::from_secs(2), c.endpoint.close()).await;
@@ -1062,6 +1125,11 @@ async fn ticker(inner: Arc<Inner>) {
             }
         }
         if tick % 2 == 0 {
+            // Sender diagnostics: close out files idle for 15 s.
+            sender::flush_send_diags(&inner, Some(Duration::from_secs(15)), "idle");
+            if tick % 10 == 0 {
+                sender::sample_send_diags(&inner);
+            }
             // Per-file send rates and the outgoing list.
             let files: Vec<_> = inner.outgoing.lock().values().cloned().collect();
             let mut busy = false;

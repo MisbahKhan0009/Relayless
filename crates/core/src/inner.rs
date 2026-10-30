@@ -13,6 +13,7 @@ use tokio::sync::{broadcast, oneshot, Notify};
 use tokio_util::sync::CancellationToken;
 
 use crate::db::Db;
+use crate::diag::{DiagConfig, TransferDiag};
 use crate::receiver::{JobHandle, PeerConn};
 use crate::types::{AccessRequest, CoreEvent, Settings};
 use crate::util::RateLimiter;
@@ -141,6 +142,12 @@ pub struct Inner {
     pub addr_hints: Mutex<HashMap<EndpointId, iroh::EndpointAddr>>,
     pub jobs: Mutex<HashMap<String, Arc<JobHandle>>>,
     pub slots: JobSlots,
+    // diagnostics
+    pub diag: DiagConfig,
+    /// Congestion controller the endpoint was bound with (settings apply at restart).
+    pub congestion_active: &'static str,
+    /// Sender-side diagnostics per (receiver, file), keyed like `outgoing`.
+    pub send_diags: Mutex<HashMap<String, Arc<TransferDiag>>>,
 }
 
 impl Inner {

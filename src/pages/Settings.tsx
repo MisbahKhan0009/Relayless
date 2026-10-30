@@ -20,9 +20,13 @@ function Row({ label, hint, children }: { label: string; hint?: React.ReactNode;
   );
 }
 
+// `value` is KiB/s (0 = unlimited); shown as MB/s. Keep three decimals so a
+// small limit (e.g. 50 KiB/s = 0.049) never displays as "0".
+const kibToMbText = (kib: number) => (kib ? String(Number((kib / 1024).toFixed(3))) : "");
+
 function LimitInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const [text, setText] = useState(value ? String(Math.round(value / 1024)) : "");
-  useEffect(() => setText(value ? String(Math.round(value / 1024)) : ""), [value]);
+  const [text, setText] = useState(kibToMbText(value));
+  useEffect(() => setText(kibToMbText(value)), [value]);
   return (
     <div className="hstack">
       <input
@@ -32,6 +36,8 @@ function LimitInput({ value, onChange }: { value: number; onChange: (v: number) 
         value={text}
         onChange={(e) => setText(e.target.value.replace(/[^0-9.]/g, ""))}
         onBlur={() => {
+          // Leaving the field untouched must not re-save a rounded value.
+          if (text === kibToMbText(value)) return;
           const mb = parseFloat(text);
           onChange(Number.isFinite(mb) && mb > 0 ? Math.round(mb * 1024) : 0);
         }}

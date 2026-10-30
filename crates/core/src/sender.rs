@@ -14,6 +14,7 @@ use tokio::sync::oneshot;
 use tracing::{debug, warn};
 
 use crate::db::ShareRow;
+use crate::diag::{self, TransferDiag};
 use crate::inner::{Inner, PendingAccess};
 use crate::invite::token_hash;
 use crate::net::route_of;
@@ -68,6 +69,8 @@ async fn handle_conn(inner: Arc<Inner>, conn: Connection) {
         })
     };
 
+    // Requests in flight on this connection (diagnostics; the QUIC limit is 64).
+    let in_flight = Arc::new(diag::Gauge::new());
     loop {
         let (send, recv) = match conn.accept_bi().await {
             Ok(s) => s,
@@ -75,11 +78,24 @@ async fn handle_conn(inner: Arc<Inner>, conn: Connection) {
         };
         let inner = inner.clone();
         let conn = conn.clone();
+        let in_flight = in_flight.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_stream(&inner, peer, &conn, send, recv).await {
+            let _g = in_flight.enter();
+            if let Err(e) = handle_stream(&inner, peer, &conn, send, recv, &in_flight).await {
                 debug!("request from {} failed: {e:#}", peer.fmt_short());
             }
         });
+    }
+    if inner.diag.enabled {
+        let s = in_flight.snapshot();
+        tracing::info!(
+            target: "relayless_core::diag",
+            "connection_closed role=sender peer={} requests_in_flight_peak={} limit={} close_reason={:?}",
+            short_peer(&peer.to_string()),
+            s.peak,
+            crate::net::MAX_BIDI_STREAMS,
+            conn.close_reason().map(|r| r.to_string().chars().take(160).collect::<String>())
+        );
     }
 
     watcher.abort();
@@ -101,8 +117,13 @@ async fn handle_stream(
     conn: &Connection,
     mut send: SendStream,
     mut recv: RecvStream,
+    in_flight: &diag::Gauge,
 ) -> Result<()> {
+    let t = Instant::now();
     let req: Request = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv)).await??;
+    let request_read = t.elapsed();
+    let mut chunk_diag: Option<Arc<TransferDiag>> = None;
+    let mut receipt_key: Option<String> = None;
     match req {
         Request::Hello { v, token, device_name } => {
             handle_hello(inner, peer, conn, &mut send, v, token, device_name).await?;
@@ -131,7 +152,13 @@ async fn handle_stream(
         Request::Chunk { share, path, size, mtime_ms, chunk_size, index, from, have } => {
             match authorize(inner, peer, &share) {
                 Ok(s) => {
-                    serve_chunk(inner, peer, conn, &mut send, &s, &path, size, mtime_ms, chunk_size, index, from, have)
+                    let d = send_diag_for(inner, peer, &share, &path, size);
+                    d.stages.request_read.record(request_read);
+                    d.c.requests.fetch_add(1, Ordering::Relaxed);
+                    d.c.conn_streams_peak.fetch_max(in_flight.current(), Ordering::Relaxed);
+                    d.touch();
+                    chunk_diag = Some(d.clone());
+                    serve_chunk(inner, peer, conn, &mut send, &s, &path, size, mtime_ms, chunk_size, index, from, have, &d)
                         .await?
                 }
                 Err(r) => write_frame(&mut send, &r).await?,
@@ -140,17 +167,185 @@ async fn handle_stream(
         Request::Receipt { share, path, size, job, fingerprint, started_at, finished_at, active_ms, direct_bytes, relay_bytes, peak_bps, blocks } => {
             let resp = match authorize(inner, peer, &share) {
                 Ok(s) => {
+                    receipt_key = Some(outgoing_key(peer, &share, &path));
                     let r = ReceiptIn { path, size, job, fingerprint, started_at, finished_at, active_ms, direct_bytes, relay_bytes, peak_bps, blocks };
                     record_sent(inner, peer, &s, r).await
                 }
                 Err(r) => r,
             };
             write_frame(&mut send, &resp).await?;
+            // The receiver finished and verified the file: close out its
+            // diagnostics after replying, so the receipt isn't delayed.
+            if let Some(key) = &receipt_key {
+                flush_send_diag_key(inner, key, "receipt_received");
+            }
         }
     }
     let _ = send.finish();
+    let t = Instant::now();
     let _ = send.stopped().await;
+    if let Some(d) = chunk_diag {
+        // Waiting for the receiver to acknowledge the stream's last bytes.
+        d.stages.stream_finish_wait.record(t.elapsed());
+        d.touch();
+    }
     Ok(())
+}
+
+// ------------------------------------------------------------------ diagnostics
+
+/// Same key as `Inner::outgoing_for`.
+fn outgoing_key(peer: EndpointId, share_id: &str, path: &[String]) -> String {
+    let key = format!("{peer}|{share_id}|{}", path.join("/"));
+    blake3::hash(key.as_bytes()).to_hex()[..16].to_string()
+}
+
+/// Finds or starts the sender-side diagnostics for one file and receiver.
+fn send_diag_for(inner: &Arc<Inner>, peer: EndpointId, share_id: &str, path: &[String], size: u64) -> Arc<TransferDiag> {
+    let key = outgoing_key(peer, share_id, path);
+    let stale = {
+        let mut map = inner.send_diags.lock();
+        match map.get(&key) {
+            Some(d) if d.size == size => return d.clone(),
+            Some(_) => map.remove(&key),
+            None => None,
+        }
+    };
+    if let Some(old) = stale {
+        finish_send_diag(inner, &old, "source_changed");
+    }
+    let d = Arc::new(TransferDiag::new(
+        format!("s-{}", random_id()),
+        "sender",
+        diag::file_key(share_id, path),
+        diag::file_ext(path),
+        short_peer(&peer.to_string()),
+        size,
+    ));
+    let s = inner.settings();
+    d.set_configuration(serde_json::json!({
+        "block_size_bytes": BLOCK,
+        "upload_limit": diag::limit_json(s.upload_limit_kbps, inner.upload_limiter.rate()),
+        "connection_mode": s.connection_mode,
+        "transport": crate::net::transport_json(inner.congestion_active),
+        "congestion_control_setting": s.congestion,
+        "note": "chunk size and stream count are chosen by the receiver; see chunks[].bytes and the receiver summary",
+    }));
+    inner.send_diags.lock().entry(key).or_insert(d).clone()
+}
+
+fn finish_send_diag(inner: &Inner, d: &TransferDiag, outcome: &str) {
+    if !inner.diag.enabled {
+        return;
+    }
+    let s = inner.settings();
+    let extra = diag::SummaryExtra {
+        direct_only: s.direct_only(),
+        upload_limit_bps: Some(inner.upload_limiter.rate()),
+        download_limit_bps: Some(inner.download_limiter.rate()),
+        active_time: Some(d.streams.busy()),
+        transfer_extra: vec![("upload_limiter_process", inner.upload_limiter.stats_json())],
+        ..Default::default()
+    };
+    if let Some(summary) = d.summary(outcome, extra) {
+        if outcome == "shutdown" {
+            diag::emit_summary_sync(&inner.diag, d, &summary);
+        } else {
+            diag::emit_summary(&inner.diag, d, &summary);
+        }
+    }
+}
+
+fn flush_send_diag_key(inner: &Inner, key: &str, outcome: &str) {
+    let d = inner.send_diags.lock().remove(key);
+    if let Some(d) = d {
+        finish_send_diag(inner, &d, outcome);
+    }
+}
+
+/// Interval samples for files being sent (every 5 s from the ticker).
+pub fn sample_send_diags(inner: &Inner) {
+    if !inner.diag.enabled {
+        return;
+    }
+    // Keep sampling for 15 s after the last block was handed to QUIC: data can
+    // still be draining from the send buffer (up to SEND_WINDOW) after every
+    // chunk handler has returned.
+    let active: Vec<Arc<TransferDiag>> = inner
+        .send_diags
+        .lock()
+        .values()
+        .filter(|d| d.streams.current() > 0 || d.idle_for() < Duration::from_secs(15))
+        .cloned()
+        .collect();
+    for d in active {
+        let mut extra = serde_json::json!({});
+        if let Some(conn) = d.connection() {
+            let actual = route_of(&conn);
+            let report = crate::net::path_report(&conn);
+            let paths = report["paths"].as_array().cloned().unwrap_or_default();
+            let sel = paths.iter().find(|p| p["selected"] == true).cloned();
+            extra["route_api"] = serde_json::json!(diag::route_label(&actual.kind));
+            extra["rtt_ms"] = serde_json::json!(actual.rtt_ms);
+            extra["paths_open"] = serde_json::json!(paths.len());
+            // On the sender these describe the data direction.
+            for (k, f) in [
+                ("selected_path_id", "id"),
+                ("cwnd_bytes", "cwnd_bytes"),
+                ("bandwidth_estimate_bits_per_sec", "bandwidth_estimate_bits_per_sec"),
+                ("pacing_rate_bytes_per_sec", "pacing_rate_bytes_per_sec"),
+                ("congestion_events", "congestion_events"),
+                ("path_sent_packets", "sent_packets"),
+                ("path_lost_packets", "lost_packets"),
+            ] {
+                extra[k] = sel.as_ref().map(|p| p[f].clone()).unwrap_or_default();
+            }
+            extra["lost_packets_total"] = report["totals"]["lost_packets"].clone();
+            extra["sent_packets_total"] = report["totals"]["sent_packets"].clone();
+        }
+        let s = d.sample_now(extra);
+        tracing::info!(
+            target: "relayless_core::diag",
+            "transfer_interval role=sender id={} file={} peer={} t_s={:.1} bytes={} interval_mib_s={} route={} streams={} paths={} path={} rtt_ms={} cwnd={} bw_est_bps={} pacing_bytes_s={} cong_events={} path_sent={} path_lost={} lost_total={} limiter_wait_ms={} quic_write_ms={}",
+            d.id,
+            d.file_key,
+            d.peer,
+            s["t_ms"].as_f64().unwrap_or(0.0) / 1000.0,
+            s["bytes"],
+            s["interval_avg_mib_per_sec"],
+            s["route_api"].as_str().unwrap_or("unknown"),
+            s["active_streams"],
+            s["paths_open"],
+            s["selected_path_id"],
+            s["rtt_ms"],
+            s["cwnd_bytes"],
+            s["bandwidth_estimate_bits_per_sec"],
+            s["pacing_rate_bytes_per_sec"],
+            s["congestion_events"],
+            s["path_sent_packets"],
+            s["path_lost_packets"],
+            s["lost_packets_total"],
+            s["limiter_wait_ms"],
+            s["quic_write_ms"],
+        );
+    }
+}
+
+/// Writes summaries for sender diagnostics that have been idle for `idle`
+/// (or all of them when `idle` is `None`) and forgets them.
+pub fn flush_send_diags(inner: &Inner, idle: Option<Duration>, outcome: &str) {
+    let done: Vec<Arc<TransferDiag>> = {
+        let mut map = inner.send_diags.lock();
+        let keys: Vec<String> = map
+            .iter()
+            .filter(|(_, d)| idle.is_none_or(|i| d.streams.current() == 0 && d.idle_for() >= i))
+            .map(|(k, _)| k.clone())
+            .collect();
+        keys.into_iter().filter_map(|k| map.remove(&k)).collect()
+    };
+    for d in done {
+        finish_send_diag(inner, &d, outcome);
+    }
 }
 
 // ------------------------------------------------------------------ authorization
@@ -528,26 +723,40 @@ async fn serve_chunk(
     index: u64,
     from: u64,
     have: Option<u64>,
+    d: &TransferDiag,
 ) -> Result<()> {
     if !(64 * 1024..=MAX_CHUNK).contains(&chunk_size)
         || chunk_size % BLOCK != 0
         || index.saturating_mul(chunk_size) >= size.max(1)
     {
+        d.error(diag::ErrCat::BadRequest);
         write_frame(send, &Response::err(ErrCode::BadRequest, "Invalid chunk request.")).await?;
         return Ok(());
     }
     let offset = index * chunk_size;
     let len = chunk_size.min(size - offset);
     if from % BLOCK != 0 || from >= len {
+        d.error(diag::ErrCat::BadRequest);
         write_frame(send, &Response::err(ErrCode::BadRequest, "Invalid resume offset.")).await?;
         return Ok(());
     }
-    if inner.settings.read().direct_only() && !route_of(conn).is_direct() {
+    let start_route = route_of(conn);
+    d.observe_route(diag::route_label(&start_route.kind), start_route.rtt_ms);
+    // Track the latest connection (the receiver may have reconnected).
+    d.set_connection(conn);
+    if inner.settings.read().direct_only() && !start_route.is_direct() {
+        d.error(diag::ErrCat::RelayPathActive);
         write_frame(send, &Response::err(ErrCode::RelayBlocked, "The sender only allows direct connections.")).await?;
         return Ok(());
     }
+    let mut trace = diag::ChunkTrace::new(d.origin, index, None, from, Some(diag::route_label(&start_route.kind)));
+    d.c.chunks_started.fetch_add(1, Ordering::Relaxed);
+    if from > 0 {
+        d.c.chunks_resumed.fetch_add(1, Ordering::Relaxed);
+    }
     let root = PathBuf::from(&share.root_path);
     let comps = path.to_vec();
+    let t = Instant::now();
     let opened = tokio::task::spawn_blocking(move || -> Result<std::fs::File, Response> {
         let p = resolve_in_share(&root, &comps)?;
         let f = open_source(&p).map_err(|e| {
@@ -563,16 +772,43 @@ async fn serve_chunk(
         }
         Ok(f)
     })
-    .await?;
+    .await;
+    d.stages.file_open.record(t.elapsed());
+    let opened = match opened {
+        Ok(o) => o,
+        Err(e) => {
+            d.error(diag::ErrCat::Unknown);
+            d.finish_chunk(trace.finish("failed", Some(diag::ErrCat::Unknown), false));
+            return Err(e.into());
+        }
+    };
     let file = match opened {
         Ok(f) => Arc::new(f),
         Err(resp) => {
+            let cat = match &resp {
+                Response::Error { code: ErrCode::SourceChanged, .. } => diag::ErrCat::SourceChanged,
+                Response::Error { code: ErrCode::Denied, .. } => diag::ErrCat::Denied,
+                Response::Error { code: ErrCode::BadRequest, .. } => diag::ErrCat::BadRequest,
+                _ => diag::ErrCat::SenderDiskRead,
+            };
+            d.error(cat);
+            d.finish_chunk(trace.finish("failed", Some(cat), false));
             write_frame(send, &resp).await?;
             return Ok(());
         }
     };
 
-    write_frame(send, &Response::Chunk { len: len - from }).await?;
+    if let Err(e) = write_frame(send, &Response::Chunk { len: len - from }).await {
+        let cat = diag::classify_anyhow(&e);
+        let outcome = if cat == diag::ErrCat::PeerStopped { "stopped" } else { "failed" };
+        if outcome == "failed" {
+            d.error(cat);
+        }
+        d.finish_chunk(trace.finish(outcome, Some(cat), false));
+        return Err(e);
+    }
+    let _active = d.streams.enter();
+    let mut cat: Option<diag::ErrCat> = None;
 
     let display: String = path.last().cloned().unwrap_or_default();
     let stats = inner.upload_stats_for(peer);
@@ -592,44 +828,87 @@ async fn serve_chunk(
         let mut blocks = 0u32;
         while remaining > 0 {
             let n = (remaining as usize).min(BLOCK as usize);
-            inner.upload_limiter.acquire(n).await;
+            let w = inner.upload_limiter.acquire(n).await;
+            if !w.is_zero() {
+                d.stages.limiter_wait.record_bytes(w, n as u64);
+                d.c.limiter_waits.fetch_add(1, Ordering::Relaxed);
+                trace.limiter(w);
+            }
             let f = file.clone();
             // Read the block, hash it, and confirm the file hasn't changed since,
             // so a block hash never vouches for bytes from two file versions.
-            let (b, r) = tokio::task::spawn_blocking(move || {
+            let queued = Instant::now();
+            let (b, r, read_d, meta_d, hash_d) = tokio::task::spawn_blocking(move || {
                 let mut b = buf;
-                let r = read_exact_at(&f, &mut b[..n], pos).map_err(|e| e.to_string()).and_then(|_| {
+                let (mut read_d, mut meta_d, mut hash_d) = (Duration::ZERO, Duration::ZERO, Duration::ZERO);
+                let t = Instant::now();
+                let read = read_exact_at(&f, &mut b[..n], pos);
+                read_d = read_d.saturating_add(t.elapsed());
+                let r = read.map_err(|e| (diag::ErrCat::SenderDiskRead, e.to_string())).and_then(|_| {
+                    let t = Instant::now();
                     let unchanged = f
                         .metadata()
                         .map(|m| m.len() == size && system_time_ms(m.modified()) == mtime_ms)
                         .unwrap_or(false);
+                    meta_d = t.elapsed();
                     if unchanged {
-                        Ok(*blake3::hash(&b[..n]).as_bytes())
+                        let t = Instant::now();
+                        let h = *blake3::hash(&b[..n]).as_bytes();
+                        hash_d = t.elapsed();
+                        Ok(h)
                     } else {
-                        Err("source changed".to_string())
+                        Err((diag::ErrCat::SourceChanged, "source changed".to_string()))
                     }
                 });
-                (b, r)
+                (b, r, read_d, meta_d, hash_d)
             })
             .await?;
+            let pool_wait = queued.elapsed().saturating_sub(read_d + meta_d + hash_d);
+            d.stages.disk_read.record_bytes(read_d, n as u64);
+            d.stages.metadata_check.record(meta_d);
+            d.stages.blocking_queue.record(pool_wait);
+            trace.disk_read(read_d);
+            trace.blocking_queue(pool_wait);
             buf = b;
             let hash = match r {
-                Ok(h) => h,
-                Err(e) => {
+                Ok(h) => {
+                    d.stages.hash.record_bytes(hash_d, n as u64);
+                    trace.hash(hash_d);
+                    h
+                }
+                Err((c, e)) => {
+                    cat = Some(c);
                     warn!("stopped serving chunk: {e}");
                     send.reset(VarInt::from_u32(2)).ok();
                     anyhow::bail!("{e}");
                 }
             };
-            send.write_all(&buf[..n]).await?;
-            send.write_all(&hash).await?;
+            let t = Instant::now();
+            let wrote = match send.write_all(&buf[..n]).await {
+                Ok(()) => send.write_all(&hash).await,
+                Err(e) => Err(e),
+            };
+            let wd = t.elapsed();
+            d.stages.quic_write.record_bytes(wd, n as u64);
+            trace.quic_write(wd);
+            if let Err(e) = wrote {
+                cat = Some(diag::classify_write(&e));
+                return Err(e.into());
+            }
+            let route = diag::route_label(crate::net::route_kind(conn));
+            d.c.add_route_bytes(route, n as u64);
+            d.c.bytes.fetch_add(n as u64, Ordering::Relaxed);
+            d.c.blocks.fetch_add(1, Ordering::Relaxed);
+            trace.block(n as u64);
+            d.touch();
             stats.sent.fetch_add(n as u64, Ordering::Relaxed);
             of.since.fetch_add(n as u64, Ordering::Relaxed);
             of.last_ms.store(now_ms(), Ordering::Relaxed);
             pos += n as u64;
             remaining -= n as u64;
             blocks += 1;
-            if blocks % 8 == 0 && inner.settings.read().direct_only() && !route_of(conn).is_direct() {
+            if blocks % 8 == 0 && inner.settings.read().direct_only() && route != diag::Route::Direct {
+                cat = Some(diag::ErrCat::RelayPathActive);
                 send.reset(VarInt::from_u32(3)).ok();
                 anyhow::bail!("route switched to relay");
             }
@@ -640,5 +919,19 @@ async fn serve_chunk(
     stats.end(&display);
     of.active.fetch_sub(1, Ordering::Relaxed);
     of.last_ms.store(now_ms(), Ordering::Relaxed);
+    let (outcome, cat) = match &result {
+        Ok(()) => ("completed", None),
+        Err(e) => match cat.unwrap_or_else(|| diag::classify_anyhow(e)) {
+            // The receiver stopped the stream (pause, cancel, a sibling
+            // stream's failure, corrupt block): not a sender-side failure.
+            diag::ErrCat::PeerStopped => ("stopped", Some(diag::ErrCat::PeerStopped)),
+            c => ("failed", Some(c)),
+        },
+    };
+    if let (Some(c), "failed") = (cat, outcome) {
+        d.error(c);
+    }
+    d.finish_chunk(trace.finish(outcome, cat, false));
+    d.touch();
     result
 }

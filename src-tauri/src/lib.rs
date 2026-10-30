@@ -493,6 +493,8 @@ pub fn run() {
                 default_device_name: name,
                 default_download_dir: downloads,
                 local_only: false,
+                // Per-transfer summaries in <app data>/diagnostics; RELAYLESS_DIAG=0 turns them off.
+                diagnostics: true,
             }))
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
             relayless_core::set_low_priority(core.settings().low_priority);
