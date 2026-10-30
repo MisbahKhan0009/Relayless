@@ -20,6 +20,7 @@ fn opts(dir: &Path, name: &str, diagnostics: bool) -> CoreOptions {
         default_download_dir: dir.join("downloads"),
         local_only: true,
         diagnostics,
+        endpoint_hook: None,
     }
 }
 
@@ -167,7 +168,10 @@ async fn summaries_describe_a_complete_transfer() {
     assert_eq!(r["configuration"]["parallel_streams_setting"], 3);
     assert_eq!(r["configuration"]["workers_first_pass"], 3);
     assert_eq!(r["configuration"]["transport"]["stream_window_bytes"], 1_000_000);
-    assert_eq!(r["configuration"]["transport"]["congestion_control_active"], "bbr3");
+    let expected_cc = if std::env::var("RELAYLESS_TEST_CONGESTION").as_deref() == Ok("bbr") { "bbr3" } else { "cubic" };
+    assert_eq!(r["configuration"]["transport"]["congestion_control_active"], expected_cc);
+    assert_eq!(r["configuration"]["transport"]["adaptive_flow_window"], true);
+    assert_eq!(r["transfer"]["flow_window"]["enabled"], true);
     assert_eq!(r["configuration"]["download_limit"]["unlimited"], true);
     // Concurrency: never more than the configured streams.
     let peak = num(&r, "/transfer/active_streams/peak");

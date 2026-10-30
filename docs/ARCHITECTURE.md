@@ -13,11 +13,11 @@ Relayless has three layers:
 Each installation has a persistent Ed25519 key (`identity.key` in the app data folder); its public key is the device ID. Connections use [iroh](https://github.com/n0-computer/iroh), which provides QUIC (TLS 1.3) between public keys, NAT traversal (hole punching), address lookup over DNS/pkarr, and relay fallback.
 
 - **Route visibility.** The engine watches the connection's selected path and reports `direct` or `relay` to the UI.
-- **Direct first (default).** The receiver waits up to 15 seconds for hole punching to find a direct path, then requests data over whatever path is selected; QUIC multipath moves the connection to a direct path as soon as one validates. Relays forward encrypted QUIC packets only. Installs from before this default are moved to it once (`route_v2`).
+- **Direct first (default).** The receiver waits up to 5 seconds for hole punching to find a direct path, then requests data over whatever path is selected; QUIC multipath moves the connection to a direct path as soon as one validates. Relays forward encrypted QUIC packets only. Installs from before this default are moved to it once (`route_v2`).
 - **Own relays (optional).** Settings → Connection → Relay server replaces n0's public relays (rate-limited, meant for testing) with the user's own `iroh-relay` servers; see [RELAY.md](RELAY.md). Applies after a restart.
 - **Direct only (optional).** The receiver doesn't request file data and the sender refuses to serve it while the selected path is a relay. Both sides re-check during a transfer.
 - **Stall detection.** A chunk stream fails only after 90 seconds with no bytes at all; slow links can take minutes per block when many streams share them. Progress counts bytes as they arrive, so slow transfers never look stuck at 0.
-- **Tuning.** BBRv3 congestion control; per-stream receive windows below 1 MB (the QUIC stack aborts a stream whose reassembly buffer exceeds 1024 fragments, which a large window allows under heavy loss); throughput comes from many parallel chunk streams instead.
+- **Tuning.** Cubic congestion control (BBRv3 optional); an adaptive connection window on the receiver that keeps at most about 100 ms of queue in front of the bottleneck (see [TRANSFER_PROTOCOL.md](TRANSFER_PROTOCOL.md) section 8); per-stream receive windows below 1 MB (the QUIC stack aborts a stream whose reassembly buffer exceeds 1024 fragments, which a large window allows under heavy loss); throughput comes from many parallel chunk streams instead.
 
 ## Invitations and pairing
 

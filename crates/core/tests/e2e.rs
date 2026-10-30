@@ -11,6 +11,7 @@ fn opts(dir: &Path, name: &str) -> CoreOptions {
         default_download_dir: dir.join("downloads"),
         local_only: true,
         diagnostics: true,
+        endpoint_hook: None,
     }
 }
 

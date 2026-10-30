@@ -495,6 +495,7 @@ pub fn run() {
                 local_only: false,
                 // Per-transfer summaries in <app data>/diagnostics; RELAYLESS_DIAG=0 turns them off.
                 diagnostics: true,
+                endpoint_hook: None,
             }))
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
             relayless_core::set_low_priority(core.settings().low_priority);

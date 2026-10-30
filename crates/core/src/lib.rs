@@ -2,6 +2,7 @@
 
 mod db;
 pub mod diag;
+pub mod flow;
 mod inner;
 pub mod invite;
 mod net;
@@ -47,7 +48,16 @@ pub struct CoreOptions {
     /// and log interval/summary lines. The `RELAYLESS_DIAG` environment
     /// variable (0/1) overrides this.
     pub diagnostics: bool,
+    /// Test-only: builds the endpoint from `presets::Minimal` (with this
+    /// app's secret key, ALPN and QUIC transport settings already applied)
+    /// and lets the caller adjust it, e.g. to use a local, rate-limited relay
+    /// and no direct paths. `None` in the app.
+    #[doc(hidden)]
+    pub endpoint_hook: Option<EndpointHook>,
 }
+
+/// See [`CoreOptions::endpoint_hook`].
+pub type EndpointHook = Box<dyn FnOnce(iroh::endpoint::Builder) -> iroh::endpoint::Builder + Send>;
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +100,16 @@ impl Core {
             settings.connection_mode = "allow_relay".into();
             settings.route_v2 = true;
         }
+        if !settings.congestion_v2 {
+            // BBRv3 used to be the default. noq-proto's (experimental) BBRv3
+            // can sit at its 4-packet minimum window for minutes without any
+            // loss, and on loopback it ran 2-4x slower than Cubic and hung in
+            // 2 of 3 benchmark sessions. Cubic's weakness, filling deep queues,
+            // is now bounded by the receiver's adaptive flow window. Move once;
+            // users can switch back in Settings.
+            settings.congestion = "cubic".into();
+            settings.congestion_v2 = true;
+        }
         if settings.device_name.trim().is_empty() {
             settings.device_name = opts.default_device_name.clone();
         }
@@ -100,12 +120,15 @@ impl Core {
         db.save_settings(&settings)?;
         // Test-only: A/B congestion control on loopback without editing tests.
         // Applied to the endpoint only, never saved.
-        let bind_congestion = match (opts.local_only, std::env::var("RELAYLESS_TEST_CONGESTION")) {
+        let test_endpoint = opts.local_only || opts.endpoint_hook.is_some();
+        let bind_congestion = match (test_endpoint, std::env::var("RELAYLESS_TEST_CONGESTION")) {
             (true, Ok(c)) => c,
             _ => settings.congestion.clone(),
         };
         let secret = load_or_create_key(&opts.data_dir.join("identity.key"))?;
-        let endpoint = if opts.local_only {
+        let endpoint = if let Some(hook) = opts.endpoint_hook {
+            net::bind_custom(secret, &bind_congestion, hook).await?
+        } else if opts.local_only {
             net::bind_local(secret, &bind_congestion).await?
         } else {
             net::bind_main(secret, &settings.congestion, &settings.relay_urls).await?

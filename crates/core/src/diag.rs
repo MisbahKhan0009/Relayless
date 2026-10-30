@@ -905,6 +905,10 @@ impl TransferDiag {
             rec.limiter_wait_ms, rec.read_wait_ms, rec.disk_read_ms, rec.hash_ms, rec.disk_write_ms, rec.quic_write_ms,
             rec.error.map(|e| e.as_str())
         );
+        if !self.is_receiver() {
+            // The sender has no long-lived workers: a chunk handler's lifetime is its worker time.
+            self.stages.worker_time.record(Duration::from_secs_f64(rec.total_ms / 1000.0));
+        }
         match rec.outcome {
             "completed" => self.c.chunks_completed.fetch_add(1, Ordering::Relaxed),
             "stopped" => self.c.chunks_stopped.fetch_add(1, Ordering::Relaxed),

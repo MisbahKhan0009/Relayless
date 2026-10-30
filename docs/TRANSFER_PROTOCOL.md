@@ -36,12 +36,12 @@ Relayless runs on [iroh](https://github.com/n0-computer/iroh), which gives QUIC 
 | Setting | Value | Meaning |
 |---|---|---|
 | `stream_receive_window` | `STREAM_WINDOW = 1_000_000` bytes | Max unacknowledged data in flight per stream |
-| `receive_window` | `CONN_WINDOW = 48 MiB` | Max unacknowledged data per connection, all streams together |
+| `receive_window` | 4 MiB initially, then adaptive between 128 KiB and `CONN_WINDOW = 48 MiB` (see section 8) | Max unacknowledged data per connection, all streams together. `RELAYLESS_ADAPTIVE_WINDOW=0` restores the static 48 MiB |
 | `send_window` | `SEND_WINDOW = 48 MiB` | Max data buffered for sending per connection |
 | `max_concurrent_bidi_streams` | 64 | How many streams the *peer* may have open to us at once |
 | `keep_alive_interval` | 5 s | Keeps NAT bindings and relay paths alive |
 | `max_idle_timeout` | 40 s | Connection is dropped after 40 s of silence |
-| Congestion control | BBRv3 (default) or Cubic | Setting `congestion`, applied at next start |
+| Congestion control | Cubic (default) or BBRv3 | Setting `congestion`, applied at next start. Installs that had BBR are moved to Cubic once (`congestion_v2`) |
 
 Why the per-stream window is small: the QUIC stack aborts a connection if one stream's reassembly buffer holds more than 1024 separate fragments. Under heavy scattered loss, a large window allows that many holes. Keeping the window below ~1024 minimum-size packets (~1 MB) makes that impossible. Throughput comes from running many streams in parallel instead.
 
@@ -78,7 +78,7 @@ Requests are internally tagged with `"t"`, responses with `"r"`, both in `snake_
 {"r":"ack"}
 ```
 
-`Response::Hello` wraps a struct, so its fields sit next to the tag: `{"r":"hello","status":"approved","sender_name":"…","shares":[…],"message":null}`.
+`Response::Hello` wraps a struct, so its fields sit next to the tag: `{"r":"hello","status":"approved","sender_name":"â€¦","shares":[â€¦],"message":null}`.
 
 ### Chunk data stream
 
@@ -105,7 +105,7 @@ sender -> receiver:  [len][{"r":"chunk","len":L}]
 | `BLOCK` | 1 MiB | Verification and resume unit |
 | `MAX_LIST_PAGE` | 1000 | Entries per `List` page |
 | `MAX_WALK_FILES` | 50,000 | Files returned by one `Walk` |
-| `validate_components` | ≤128 components, each ≤255 bytes, no `.`/`..`/`/`/`\`/`:`/NUL | Every remote path |
+| `validate_components` | â‰¤128 components, each â‰¤255 bytes, no `.`/`..`/`/`/`\`/`:`/NUL | Every remote path |
 
 ---
 
@@ -113,12 +113,12 @@ sender -> receiver:  [len][{"r":"chunk","len":L}]
 
 | Request | Response | Used for |
 |---|---|---|
-| `Hello { v, token?, device_name }` | `Hello { status, … }`, possibly preceded by `Hello { status: pending }` frames | First request on every new connection; pairing with an invitation token |
+| `Hello { v, token?, device_name }` | `Hello { status, â€¦ }`, possibly preceded by `Hello { status: pending }` frames | First request on every new connection; pairing with an invitation token |
 | `List { share, path, offset, limit }` | `List { entries, total }` | Browsing one folder page |
 | `Walk { share, path }` | `Walk { files, truncated }` | Expanding a folder download into files |
 | `Stat { share, path }` | `Stat { size, mtime_ms, dir }` | Job creation, and checking the source at the start of every download pass |
 | `Chunk { share, path, size, mtime_ms, chunk_size, index, from, have? }` | `Chunk { len }` then the data stream | File data |
-| `Receipt { … }` | `Ack` | Sent once after a file is verified, so the sender keeps a history entry |
+| `Receipt { â€¦ }` | `Ack` | Sent once after a file is verified, so the sender keeps a history entry |
 
 Any request can get `Error { code, message }` instead.
 
@@ -144,13 +144,13 @@ sequenceDiagram
     S-->>R: Stat {size, mtime_ms}
     par worker 1
         R->>S: stream 3: Chunk {index:0, from:0}
-        S-->>R: Chunk {len}, block+hash, block+hash, …, FIN
+        S-->>R: Chunk {len}, block+hash, block+hash, â€¦, FIN
     and worker 2
         R->>S: stream 4: Chunk {index:1, from:0}
-        S-->>R: Chunk {len}, block+hash, …, FIN
+        S-->>R: Chunk {len}, block+hash, â€¦, FIN
     end
     Note over R: next free chunk index opens a new stream
-    R->>S: stream N: Receipt {…}
+    R->>S: stream N: Receipt {â€¦}
     S-->>R: Ack
 ```
 
@@ -160,19 +160,19 @@ sequenceDiagram
 
 A file is divided twice:
 
-- **Chunk** (default 16 MiB, setting `chunk_size_mib`, clamped to 8–32 MiB): unit of a request and of parallelism. One chunk = one stream. `total_chunks = ceil(size / chunk_size)`. The last chunk may be short.
+- **Chunk** (default 16 MiB, setting `chunk_size_mib`, clamped to 8â€“32 MiB): unit of a request and of parallelism. One chunk = one stream. `total_chunks = ceil(size / chunk_size)`. The last chunk may be short.
 - **Block** (fixed 1 MiB, `BLOCK`): unit of verification, writing, and resume inside a chunk. The last block of a chunk may be short.
 
-The chunk size is fixed per job when the job is created (`lib.rs`) and stored in the `jobs` row, so changing the setting only affects new downloads. The sender accepts `64 KiB ≤ chunk_size ≤ 64 MiB` and requires it to be a multiple of `BLOCK`, so in practice it must be a whole number of MiB.
+The chunk size is fixed per job when the job is created (`lib.rs`) and stored in the `jobs` row, so changing the setting only affects new downloads. The sender accepts `64 KiB â‰¤ chunk_size â‰¤ 64 MiB` and requires it to be a multiple of `BLOCK`, so in practice it must be a whole number of MiB.
 
 ### Hashes
 
 | Hash | Formula | Stored where |
 |---|---|---|
 | Block hash | `BLAKE3(block bytes)` | Sent on the wire after each block; kept in `partials.hashes` until the chunk finishes |
-| Chunk hash (scheme 2) | `BLAKE3("relayless-chunk-v2" ‖ h0 ‖ h1 ‖ …)` over the chunk's block hashes (`chunk_hash_from_blocks`) | `chunks.hash`, `chunks.scheme = 2` |
+| Chunk hash (scheme 2) | `BLAKE3("relayless-chunk-v2" â€– h0 â€– h1 â€– â€¦)` over the chunk's block hashes (`chunk_hash_from_blocks`) | `chunks.hash`, `chunks.scheme = 2` |
 | Chunk hash (scheme 1, legacy v1) | `BLAKE3(chunk bytes)` | `chunks.scheme = 1`; still accepted by the final check |
-| File fingerprint | `BLAKE3("relayless-file-v1" ‖ chunk hashes in order)`, hex | History rows and `Receipt` |
+| File fingerprint | `BLAKE3("relayless-file-v1" â€– chunk hashes in order)`, hex | History rows and `Receipt` |
 
 The block hash comes from the sender over the same encrypted stream, so it protects against read errors, a file changing while it is read, and receiver-side memory or write problems. It does not protect against a dishonest sender, which is trusted by design.
 
@@ -183,14 +183,14 @@ The block hash comes from the sender over the same encrypted stream, so it prote
 ### Job runner (`run_job`)
 
 ```
-Queued ──slot──> Connecting/Reconnecting ──> (WaitingPeer | WaitingDirect) ──> Downloading ──> Verifying ──> Completed
+Queued â”€â”€slotâ”€â”€> Connecting/Reconnecting â”€â”€> (WaitingPeer | WaitingDirect) â”€â”€> Downloading â”€â”€> Verifying â”€â”€> Completed
                        ^                                                         |               |
-                       └──────────── backoff on Network/Busy errors ─────────────┘   bad chunks ─┘ (re-download)
+                       â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ backoff on Network/Busy errors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   bad chunks â”€â”˜ (re-download)
 ```
 
-1. **Job slot.** `inner.slots` limits concurrent files to `max_concurrent_jobs` (default 2, range 1–6).
+1. **Job slot.** `inner.slots` limits concurrent files to `max_concurrent_jobs` (default 2, range 1â€“6).
 2. **Connect.** `get_conn` reuses the cached connection or dials (30 s timeout) and sends `Hello` without a token. Anything except `Approved` makes the job *needs attention*.
-3. **Direct grace.** On the first attempt, if the route is a relay, wait up to `DIRECT_GRACE` (15 s) for hole punching. In direct-only mode, wait for a direct path and do not send any data request until one exists.
+3. **Direct grace.** On the first attempt, if the route is a relay, wait up to `DIRECT_GRACE` (5 s, was 15 s) for hole punching. In direct-only mode, wait for a direct path and do not send any data request until one exists.
 4. **Download pass** (`transfer_pass`, below).
 5. **Final check** (`verify_and_finalize`), then rename and send `Receipt`.
 
@@ -200,7 +200,7 @@ Queued ──slot──> Connecting/Reconnecting ──> (WaitingPeer | WaitingD
 2. `prepare_partial` opens `<dest>.rlpart`. If it is new or its length differs from the file size, stored progress is cleared, free space is checked (needs file size + 64 MiB), and the file is pre-allocated with `set_len(size)`.
 3. Load progress from SQLite: finished chunk indices from `chunks`, verified prefixes from `partials`. Partial rows that don't fit (wrong hash count, index out of range) are ignored.
 4. Build the work queue: partly done chunks first, then the remaining chunks in index order.
-5. Spawn `min(parallel_streams, missing chunks)` workers (default 12, range 1–32) and one committer task.
+5. Spawn `min(parallel_streams, missing chunks)` workers (default 12, range 1â€“32) and one committer task.
 6. Each worker pops an index and calls `fetch_chunk` until the queue is empty or an error occurs. On error the index goes back to the front of the queue and the pass is cancelled; the most severe error from all workers is reported.
 
 ### Chunk download (`fetch_chunk`)
@@ -225,7 +225,7 @@ A hash mismatch stops the stream and returns `Corrupt`. The worker puts the chun
 The committer is the only place progress becomes durable:
 
 1. Collect `Partial` and `Done` messages (wakes at least every 500 ms).
-2. Commit when **2 s** have passed (`COMMIT_INTERVAL`), **≥ 256 MiB** of new progress has piled up, or all workers have stopped.
+2. Commit when **2 s** have passed (`COMMIT_INTERVAL`), **â‰¥ 256 MiB** of new progress has piled up, or all workers have stopped.
 3. Commit = `fsync` the `.rlpart` file (`sync_data`), **then** one SQLite transaction (`db.commit_progress`) that inserts finished chunks, upserts or deletes partial rows, and updates `verified_bytes` and stats.
 
 Because the flush happens before the database write, the database never claims bytes that are not on disk. After a crash, power loss or pause, at most the last ~2 s of data is fetched again, and each chunk resumes from its last saved block.
@@ -271,11 +271,23 @@ Disk I/O is positional (`pread`/`pwrite`, or `seek_read`/`seek_write` on Windows
 
 ## 8. Throughput, flow control and concurrency
 
+### Adaptive connection window (`flow.rs`)
+
+The receiver sizes the connection's flow-control window (`MAX_DATA`) to `delivery rate Ã— (base RTT + 100 ms)`, re-evaluated every 200 ms. That is one bandwidth-delay product plus about 100 ms of queue, so the sender can keep the bottleneck busy but can't build a deep queue in front of it, whatever its congestion controller does.
+
+- Delivery rate is the maximum of 1 s rates over the last 2 s; base RTT is the lowest smoothed RTT on the current path.
+- The window shrinks only when the RTT shows a queue above the target; an idle connection keeps its window. When the window is the limit, it grows by about `(base + 100 ms) / RTT` per step.
+- A drain probe (window at ~50 ms of data until the RTT stops falling) re-measures the base RTT after 30 s of queueing and at most every 60 s while data flows. A path change resets the estimates.
+- Limits: 128 KiB to 48 MiB; 4 MiB is advertised in the handshake, because the initial `MAX_DATA` can't be withdrawn.
+- No wire change; it works with older senders. The current state is in the receiver summary under `transfer.flow_window` and in interval samples (`flow_window_bytes`, `flow_base_rtt_ms`).
+
+Why: on the relay path in the field data, the old static setup let 12 MB queue at the relay (12 streams Ã— 1 MB stream windows), giving 2â€“33 s RTT, 10â€“30 % loss, bursts followed by tens of seconds at zero, stall timeouts and an idle-timeout disconnect.
+
 Each stream can have at most `STREAM_WINDOW` bytes unacknowledged, so one stream's speed is capped at about:
 
 ```
-per-stream ceiling ≈ STREAM_WINDOW / RTT
-connection ceiling ≈ min(parallel streams × STREAM_WINDOW, CONN_WINDOW) / RTT
+per-stream ceiling â‰ˆ STREAM_WINDOW / RTT
+connection ceiling â‰ˆ min(parallel streams Ã— STREAM_WINDOW, CONN_WINDOW) / RTT
 ```
 
 | RTT | One stream | 12 streams (default) | 32 streams |
@@ -288,7 +300,7 @@ These are flow-control ceilings. Real throughput is also limited by congestion c
 
 Concurrency limits that interact:
 
-- Chunk streams per connection = `parallel_streams` × running jobs from the same sender. With maximum settings that is 32 × 6 = 192, but the sender allows only 64 concurrent bidi streams; extra `open_bi` calls wait until a stream closes.
+- Chunk streams per connection = `parallel_streams` Ã— running jobs from the same sender. With maximum settings that is 32 Ã— 6 = 192, but the sender allows only 64 concurrent bidi streams; extra `open_bi` calls wait until a stream closes.
 - `CONN_WINDOW` (48 MiB) becomes the limit above ~48 concurrent streams.
 - `Stat` and `Receipt` requests use the same stream budget as chunk streams.
 
@@ -309,10 +321,10 @@ One token bucket per direction (`upload_limiter` on the sender, `download_limite
 | Receiver waits for a response frame | `READ_TIMEOUT` | 60 s |
 | No bytes on a chunk stream | `STALL_TIMEOUT` | 90 s |
 | Hello waiting for approval | inline (receiver) / `APPROVAL_TIMEOUT` (sender) | 20 min / 15 min |
-| Wait for direct path on first attempt | `DIRECT_GRACE` | 15 s |
+| Wait for direct path on first attempt | `DIRECT_GRACE` | 5 s |
 | QUIC idle | `max_idle_timeout` | 40 s |
 
-### Error codes (`ErrCode` → `JobError`)
+### Error codes (`ErrCode` â†’ `JobError`)
 
 | Wire code | Receiver treats as | Result |
 |---|---|---|
@@ -359,7 +371,7 @@ On restart, `spawn_job` restores counters from these rows, and `transfer_pass` r
 - **Compatible changes** (no bump needed): new optional request fields with `#[serde(default)]` (as with `from` and `have`); new response fields that old peers can ignore; new request types whose rejection by old senders is harmless (as with `Receipt`, where an old sender fails to decode it and the receiver just logs it).
 - **Breaking changes** (bump `PROTOCOL_VERSION`): the frame header, the block layout or hash placement, `BLOCK`, the chunk hash formula, or the meaning of existing fields.
 - `BLOCK` is also baked into stored state. Changing it makes existing `partials` rows fail the hash-count check (they are dropped and re-downloaded) and changes scheme-2 chunk hashes, so finished chunks of in-progress jobs would fail the final check and be fetched again. A new chunk hash scheme number is the clean way to handle this.
-- Keep `MAX_CHUNK` ≥ the largest `chunk_size_mib` the settings allow, or new receivers will get `BadRequest` from old senders.
+- Keep `MAX_CHUNK` â‰¥ the largest `chunk_size_mib` the settings allow, or new receivers will get `BadRequest` from old senders.
 
 ---
 
@@ -367,14 +379,14 @@ On restart, `spawn_job` restores counters from these rows, and `transfer_pass` r
 
 | Knob | Location | Default | Raising it | Lowering it |
 |---|---|---|---|---|
-| `parallel_streams` | Settings (1–32) | 12 | More throughput on high-RTT links; more memory, more disk seeks | Less memory; slower on long links |
-| `chunk_size_mib` | Settings (8–32) | 16 | Fewer request round trips; more re-download after a failed final check | Finer parallelism for small files; more per-chunk overhead |
-| `max_concurrent_jobs` | Settings (1–6) | 2 | Better for many small files | Fewer streams competing on one connection |
+| `parallel_streams` | Settings (1â€“32) | 12 | More throughput on high-RTT links; more memory, more disk seeks | Less memory; slower on long links |
+| `chunk_size_mib` | Settings (8â€“32) | 16 | Fewer request round trips; more re-download after a failed final check | Finer parallelism for small files; more per-chunk overhead |
+| `max_concurrent_jobs` | Settings (1â€“6) | 2 | Better for many small files | Fewer streams competing on one connection |
 | `download_limit_kbps`, `upload_limit_kbps` | Settings | 0 (unlimited) | | |
-| `congestion` | Settings | `bbr` | | `cubic` for fairer sharing with other traffic |
+| `congestion` | Settings | `cubic` | `bbr` may help on very lossy links, but noq-proto's BBRv3 can stall (observation 10) | |
 | `STREAM_WINDOW` | `net.rs` | 1,000,000 | Higher per-stream speed; risk of the 1024-fragment abort under loss | Safer under loss; needs more streams |
 | `CONN_WINDOW`, `SEND_WINDOW` | `net.rs` | 48 MiB | Allows more streams at full speed; more memory | |
-| `max_concurrent_bidi_streams` | `net.rs` | 64 | Needed if `parallel_streams × jobs` exceeds 64 | |
+| `max_concurrent_bidi_streams` | `net.rs` | 64 | Needed if `parallel_streams Ã— jobs` exceeds 64 | |
 | `BLOCK` | `proto.rs` | 1 MiB | Fewer hashes and syscalls | Finer resume points; **breaking change** |
 | `COMMIT_INTERVAL` and the 256 MiB threshold | `receiver.rs` | 2 s / 256 MiB | Fewer `fsync`s; more data re-fetched after a crash | Less lost work; more `fsync` cost |
 | `STALL_TIMEOUT` | `receiver.rs` | 90 s | Tolerates very slow links | Faster detection of dead streams |
@@ -389,7 +401,7 @@ These come from reading the code and have not been measured or tested. Check eac
 1. **`Walk` responses can exceed `MAX_FRAME`.** One `Walk` reply holds up to 50,000 files, each with its full path repeated. A short entry such as `Photos/2024/IMG_0001.jpg` is 82 bytes of JSON, so 50,000 of them already make ~3.9 MiB; any longer paths push the reply past 4 MiB, and `write_frame` refuses to send it. The receiver then sees a broken stream (a `Network` error) instead of `truncated: true`. Options: paginate `Walk` like `List`, stop adding files when the serialized size nears the limit, or send several frames.
 2. **One idle round trip per chunk per worker.** A worker opens a stream, sends the request, and waits for the header before data flows; it only requests the next chunk after the current one finishes. At 200 ms RTT and ~5 MB/s per stream, a 16 MiB chunk takes ~3.4 s, so the gap costs ~6%. Requesting the next chunk shortly before the current one ends (pipelining) would remove it.
 3. **Sender reads and sends one block at a time.** Each block is read, hashed, then written before the next read starts. `write_all` usually returns quickly thanks to the 48 MiB send buffer, but on slow disks (HDD, network shares, Android storage) reading the next block while the current one is sending could help.
-4. **Stream limit versus settings.** Maximum settings (32 streams × 6 jobs) ask for 192 streams on one connection, but the sender allows 64, and `CONN_WINDOW` caps useful streams near 48. Either clamp `parallel_streams × max_concurrent_jobs` or raise both limits together.
+4. **Stream limit versus settings.** Maximum settings (32 streams Ã— 6 jobs) ask for 192 streams on one connection, but the sender allows 64, and `CONN_WINDOW` caps useful streams near 48. Either clamp `parallel_streams Ã— max_concurrent_jobs` or raise both limits together.
 5. **Final check reads the whole file again.** Every block was verified in memory before writing and flushed before being recorded. The full re-read catches later disk corruption or tampering with `.rlpart`, but doubles disk reads for large files. A setting or a size threshold could make this optional.
 6. **Corruption retry counter is per worker, not per chunk.** One bad chunk can use up retries of several workers, and a worker that saw unrelated errors on other chunks has fewer retries left.
 7. **`Walk` and `List` scan whole folders.** `List` reads and sorts every entry for each page, and `Walk` must finish within the receiver's 60 s `READ_TIMEOUT`. Very large folders on slow disks could time out.
@@ -397,5 +409,7 @@ These come from reading the code and have not been measured or tested. Check eac
 
 The following were confirmed with the diagnostics added later; see [DIAGNOSTICS.md](DIAGNOSTICS.md) for the reproductions.
 
-9. **Low sender upload limits trigger stall timeouts.** The sender takes limiter tokens before writing each 1 MiB block, so with S streams each stream waits about `S × 1 MiB / limit` between blocks while sending nothing. When that exceeds the receiver's 90 s `STALL_TIMEOUT` (12 streams below ~140 KiB/s), the pass is cancelled, the connection dropped and the job retries with backoff. `repro_low_upload_limit_stalls` (100 KiB/s, 12 streams) hits the timeout after 90.0 s with 8 MiB received and a single sender limiter wait of 80.8 s.
-10. **BBRv3 can stay pinned at its minimum window with no loss.** The existing e2e suite (4 tests in parallel on loopback) failed in 10 of 35 runs with BBR and 0 of 24 with Cubic (one-sided Fisher exact p ≈ 0.003); the unmodified code failed 2 of 10. In the failing runs a transfer crawled at 37–39 KB/s for 60–120 s. Every failure with sender interval samples showed the same state on the sender's path: `cwnd` 5808 bytes (4 × 1452, BBR's `MinPipeCwnd`), a pacing rate of 46–60 KB/s, a bandwidth estimate of ~375 kbit/s, 0 lost packets and 0 congestion events. In some runs the receiver's own controller was also at the minimum window with a pacing rate of 2–7 KB/s. noq-proto marks its BBRv3 as experimental, and its internal state (phase, app-limited flag) isn't exposed, so the trigger hasn't been isolated: three variants of a dedicated reproduction (rate-limited phase, then pause and resume or a second file, with up to 4 pairs and background load) gave 0 slow runs in 31. A 40 KB/s stall with zero loss matches the 10–50 KB/s symptom, but it has only been seen on loopback so far; Test E in [DIAGNOSTICS.md](DIAGNOSTICS.md) checks it on real networks.
+9. **Low sender upload limits trigger stall timeouts.** The sender takes limiter tokens before writing each 1 MiB block, so with S streams each stream waits about `S Ã— 1 MiB / limit` between blocks while sending nothing. When that exceeds the receiver's 90 s `STALL_TIMEOUT` (12 streams below ~140 KiB/s), the pass is cancelled, the connection dropped and the job retries with backoff. `repro_low_upload_limit_stalls` (100 KiB/s, 12 streams) hits the timeout after 90.0 s with 8 MiB received and a single sender limiter wait of 80.8 s.
+10. **BBRv3 can stay pinned at its minimum window with no loss.** The existing e2e suite (4 tests in parallel on loopback) failed in 10 of 35 runs with BBR and 0 of 24 with Cubic (one-sided Fisher exact p â‰ˆ 0.003); the unmodified code failed 2 of 10. In the failing runs a transfer crawled at 37â€“39 KB/s for 60â€“120 s. Every failure with sender interval samples showed the same state on the sender's path: `cwnd` 5808 bytes (4 Ã— 1452, BBR's `MinPipeCwnd`), a pacing rate of 46â€“60 KB/s, a bandwidth estimate of ~375 kbit/s, 0 lost packets and 0 congestion events. In some runs the receiver's own controller was also at the minimum window with a pacing rate of 2â€“7 KB/s. noq-proto marks its BBRv3 as experimental, and its internal state (phase, app-limited flag) isn't exposed, so the trigger hasn't been isolated: three variants of a dedicated reproduction (rate-limited phase, then pause and resume or a second file, with up to 4 pairs and background load) gave 0 slow runs in 31. A 40 KB/s stall with zero loss matches the 10â€“50 KB/s symptom. It was later seen on a real LAN too (30 s at the 4-packet window, pacing 24â€“139 KB/s, no loss), and the loopback benchmark (512 MiB, 12 streams) gave Cubic 193â€“236 MiB/s in 6 of 6 runs while BBR managed 48â€“116 MiB/s in one session and hung in 3 of 4 sessions. The default is now Cubic.
+
+11. **Rate-limited relay plus a deep queue causes the surge-and-drop pattern.** In the cross-network field run (sender behind an address-varying NAT, so hole punching failed and every byte went through n0's public relay, which logged "rate-limiting this endpoint"), the sender's Cubic window grew to 3.6â€“28 MB, RTT reached 2â€“33 s, 10â€“30 % of packets were lost, 5 s intervals swung between 0 and 2.4 MiB/s, 10 streams hit the 90 s stall timeout, the connection idled out once and the reconnect took 4.5 minutes. The average was 0.44 MiB/s. The receiver's adaptive window (section 8) bounds this queue: on a local relay limited to 512 KiB/s with an 8 MiB burst, Cubic went from RTT p50 1.2 s, 4.4 % loss and an interval coefficient of variation of 0.69 to RTT 214 ms and a CV of 0.01 at the same steady rate. The relay's own limit remains the ceiling; only a direct path or an own relay goes faster.

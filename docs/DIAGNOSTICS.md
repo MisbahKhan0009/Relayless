@@ -11,6 +11,7 @@ Diagnostics never change the wire protocol (`relayless/1`, protocol version 2) o
 | Desktop and Android app | On by default (`CoreOptions::diagnostics = true` in `src-tauri/src/lib.rs`) |
 | Any build | Environment variable `RELAYLESS_DIAG=0` (or `off`, `false`, `no`) turns it off; `1`/`on` forces it on |
 | Tests | `CoreOptions { diagnostics: true/false, .. }` |
+| Adaptive flow window (not diagnostics, but useful for A/B tests) | `RELAYLESS_ADAPTIVE_WINDOW=0` restores the old static 48 MiB connection window on the receiver |
 
 "Off" stops the per-job sampler task, interval and summary log lines, and the JSON file. The counters themselves stay on: they are a few `Instant::now()` calls and atomic adds per 1 MiB block. On loopback, 4 runs each of the 160 MB e2e transfer gave 173–215 MB/s before the change, 188–210 MB/s with diagnostics on and 202–216 MB/s with them off, so the overhead is below the noise.
 
@@ -63,7 +64,7 @@ Stage totals are summed over parallel workers, so they can add up to more than t
 |---|---|
 | `slot_wait` | Waiting for a free job slot (`max_concurrent_jobs`) |
 | `connection_setup` | `get_conn`: lock wait plus dial and Hello when not reused |
-| `hole_punch_wait` | Waiting up to 15 s for a direct path on the first attempt |
+| `hole_punch_wait` | Waiting up to 5 s for a direct path on the first attempt |
 | `direct_only_wait` | Waiting for a direct path in direct-only mode |
 | `backoff_wait` | Sleeping between attempts |
 | `stat_request`, `prepare_partial` | Start-of-pass `Stat` round trip; opening and pre-allocating the `.rlpart` file |
@@ -107,7 +108,7 @@ From `bench_loopback` with a 64 MiB file, default settings (16 MiB chunks, so 4 
                      "workers_first_pass": 4, "max_concurrent_jobs": 2,
                      "transport": { "stream_window_bytes": 1000000, "connection_window_bytes": 50331648,
                                     "send_window_bytes": 50331648, "max_concurrent_bidi_streams": 64,
-                                    "congestion_control_active": "bbr3" },
+                                    "congestion_control_active": "bbr3" },   // older build; now "cubic" by default
                      "download_limit": { "configured_value": 0, "configured_unit": "KiB/s",
                                          "effective_bytes_per_sec": null, "unlimited": true } },
   "transfer": { "file_size_bytes": 67108864, "bytes_transferred": 67108864, "elapsed_ms": 414.343,
@@ -166,7 +167,7 @@ Same file and direction with Settings → Parallel streams at 1, 4, 8, 12, 16 an
 
 ### Test E: congestion control
 
-Settings → Connection → congestion control BBR, then Cubic. The setting applies after restarting the app **on the sender**, which is the side whose controller paces file data (restart both to be safe). Confirm the change in each summary's `configuration.transport.congestion_control_active` or the `engine_config` log line, not just in Settings. Compare sender `pacing_rate_bytes_per_sec`, `cwnd_bytes` and loss.
+Settings → Connection → congestion control Cubic (the default), then BBR. The setting applies after restarting the app **on the sender**, which is the side whose controller paces file data (restart both to be safe). Confirm the change in each summary's `configuration.transport.congestion_control_active` or the `engine_config` log line, not just in Settings. Compare sender `pacing_rate_bytes_per_sec`, `cwnd_bytes` and loss.
 
 On loopback, the same comparison runs with the unchanged e2e suite:
 
@@ -207,6 +208,7 @@ cargo test -p relayless-core --release --test diag -- --ignored --nocapture benc
 | Command | Shows |
 |---|---|
 | `cargo test -p relayless-core --release --test diag -- --ignored --nocapture repro_low_upload_limit_stalls` | A 100 KiB/s sender upload limit with 12 streams triggers the 90 s stall timeout and a reconnect (~2 min) |
+| `cargo test -p relayless-core --release --test relay -- --ignored --nocapture relay_throughput` | A transfer through a local relay with a per-client rate limit and no direct path, like n0's public relays. `RELAY_KIBS`, `RELAY_BURST_KIB`, `RELAY_SIZE_MIB`, `RELAY_RUNS`, `RELAYLESS_TEST_CONGESTION`, and `RELAYLESS_ADAPTIVE_WINDOW=0` to compare against the old static window. Prints average rate, interval CV, sender RTT p50/p95, loss and the per-interval series |
 | `cargo test -p relayless-core --release --test diag -- --ignored --nocapture repro_throughput_after_limited_phase` | Pause and resume after a rate-limited phase, several pairs at once (`REPRO_PAIRS`, `REPRO_ROUNDS`, `REPRO_CONGESTION`) |
 
 ### Optional network checks

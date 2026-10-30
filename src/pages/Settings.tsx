@@ -178,7 +178,7 @@ export default function Settings() {
             hint="Runs Relayless at below-normal priority. Network speed is unaffected; your other programs stay responsive."
             onChange={(v) => save({ lowPriority: v })}
           />
-          <Row label="Congestion control" hint="BBR keeps speed high on long or lossy links. CUBIC is the conservative standard. Applies after restarting Relayless.">
+          <Row label="Congestion control" hint="CUBIC gives the steadiest speed and is recommended. BBR (experimental) can help on very lossy links but sometimes stalls at a few KB/s. Matters most on the sending computer. Applies after restarting Relayless.">
             <Segmented
               label="Congestion control"
               value={settings.congestion}
@@ -187,8 +187,8 @@ export default function Settings() {
                 setRestartNote(true);
               }}
               options={[
-                { value: "bbr", label: "BBR (fast)" },
-                { value: "cubic", label: "CUBIC" },
+                { value: "cubic", label: "CUBIC (recommended)" },
+                { value: "bbr", label: "BBR (experimental)" },
               ]}
             />
           </Row>
@@ -212,7 +212,7 @@ export default function Settings() {
             hint={
               settings.connectionMode === "direct_only"
                 ? "File data only flows over a direct path. If routers block one (common on mobile data), transfers wait at 0 instead of using a relay."
-                : "Tries a direct path first. If none opens within about 15 seconds, data goes through a public relay, still end-to-end encrypted: the relay can't read or keep it. Switches to direct as soon as possible."
+                : "Tries a direct path first. If none opens within about 5 seconds, data goes through a public relay, still end-to-end encrypted: the relay can't read or keep it. Switches to direct as soon as possible."
             }
           >
             <Segmented

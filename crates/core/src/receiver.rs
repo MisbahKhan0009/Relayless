@@ -46,8 +46,10 @@ const READ_TIMEOUT: Duration = Duration::from_secs(60);
 /// 1 MiB block when it is shared by many streams; that is slow, not stuck.
 const STALL_TIMEOUT: Duration = Duration::from_secs(90);
 /// How long to wait for a direct path before using the encrypted relay
-/// (relay fallback mode).
-const DIRECT_GRACE: Duration = Duration::from_secs(15);
+/// (relay fallback mode). Was 15 s; in the cross-network field run hole
+/// punching never succeeded and the wait only delayed the start. QUIC
+/// multipath still moves the transfer to a direct path whenever one opens.
+const DIRECT_GRACE: Duration = Duration::from_secs(5);
 const COMMIT_INTERVAL: Duration = Duration::from_secs(2);
 
 // ====================================================================== errors
@@ -130,6 +132,10 @@ pub struct PeerConn {
     pub status: Mutex<PeerStatus>,
     /// Chunk streams open to this sender across all jobs (diagnostics).
     pub streams: diag::Gauge,
+    /// Chunk payload bytes read from this sender (all jobs), for flow control.
+    pub rx_bytes: AtomicU64,
+    /// Latest state of the adaptive flow-control window.
+    pub flow: Mutex<crate::flow::FlowSnapshot>,
 }
 
 impl PeerConn {
@@ -137,6 +143,8 @@ impl PeerConn {
         PeerConn {
             conn: tokio::sync::Mutex::new(None),
             streams: diag::Gauge::new(),
+            rx_bytes: AtomicU64::new(0),
+            flow: Mutex::new(Default::default()),
             route: watch::channel(RouteInfo::none()).0,
             status: Mutex::new(PeerStatus {
                 peer_id: id.to_string(),
@@ -177,10 +185,64 @@ pub fn peer_addr(inner: &Inner, peer: EndpointId) -> EndpointAddr {
     addr
 }
 
+/// Adjusts the connection's flow-control window for its lifetime (see `flow.rs`).
+async fn flow_loop(pc: Arc<PeerConn>, conn: Connection) {
+    use crate::flow::{FlowController, FlowSnapshot, MAX_WINDOW, TICK};
+    let vi = |w: u64| VarInt::from_u64(w).unwrap_or(VarInt::from_u32(crate::net::CONN_WINDOW));
+    if !crate::flow::enabled() {
+        conn.set_receive_window(vi(MAX_WINDOW));
+        *pc.flow.lock() = FlowSnapshot {
+            enabled: false,
+            window_bytes: MAX_WINDOW,
+            window_min_bytes: MAX_WINDOW,
+            window_max_bytes: MAX_WINDOW,
+            ..Default::default()
+        };
+        return;
+    }
+    let mut fc = FlowController::new(Instant::now());
+    conn.set_receive_window(vi(fc.window()));
+    let mut path: Option<(String, &'static str)> = None;
+    let mut tick = tokio::time::interval(TICK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {}
+            _ = conn.closed() => break,
+        }
+        let now = Instant::now();
+        let (key, srtt) = match conn.paths().iter().find(|p| p.is_selected()) {
+            Some(p) => {
+                let kind = if p.is_ip() { "direct" } else if p.is_relay() { "relay" } else { "other" };
+                (Some((format!("{:?}", p.id()), kind)), Some(p.stats().rtt))
+            }
+            None => (None, None),
+        };
+        if key.is_some() && key != path {
+            if path.is_some() {
+                fc.reset_path(now);
+                conn.set_receive_window(vi(fc.window()));
+                debug!(target: "relayless_core::diag", "flow_window path changed to {:?}; window reset to {}", key, fc.window());
+            }
+            path = key;
+        }
+        if let Some(w) = fc.tick(now, pc.rx_bytes.load(Ordering::Relaxed), srtt) {
+            conn.set_receive_window(vi(w));
+            debug!(
+                target: "relayless_core::diag",
+                "flow_window window={} base_rtt_ms={:?} srtt_ms={:?} rate_max={:?}",
+                w, fc.snap.base_rtt_ms, fc.snap.srtt_ms, fc.snap.rate_max_bytes_per_sec
+            );
+        }
+        *pc.flow.lock() = fc.snap.clone();
+    }
+}
+
 /// Installs a fresh connection: watches its route and marks the peer connected.
 fn install_conn(inner: &Arc<Inner>, pc: &Arc<PeerConn>, conn: &Connection) {
     pc.route.send_replace(route_of(conn));
     set_peer_state(inner, pc, "connected", None);
+    tokio::spawn(flow_loop(pc.clone(), conn.clone()));
     let inner = inner.clone();
     let pc = pc.clone();
     let conn = conn.clone();
@@ -661,6 +723,9 @@ async fn sample_loop(inner: Arc<Inner>, h: Arc<JobHandle>) {
             // flow-control credit (MAX_STREAM_DATA) for the sender.
             extra["pacing_rate_bytes_per_sec"] = sel.as_ref().map(|p| p["pacing_rate_bytes_per_sec"].clone()).unwrap_or_default();
             extra["paths_open"] = serde_json::json!(report["paths"].as_array().map(|p| p.len()));
+            let f = pc.flow.lock().clone();
+            extra["flow_window_bytes"] = serde_json::json!(f.window_bytes);
+            extra["flow_base_rtt_ms"] = serde_json::json!(f.base_rtt_ms);
             extra["route_api"] = serde_json::json!(diag::route_label(&actual.kind));
             extra["route_cache_matches"] = serde_json::json!(actual.kind == cached);
             extra["rtt_ms"] = serde_json::json!(actual.rtt_ms);
@@ -729,6 +794,7 @@ fn finish_diag(inner: &Arc<Inner>, h: &Arc<JobHandle>, resumed_from: u64) {
         active_time: None,
         transfer_extra: vec![
             ("connection_streams_peak", serde_json::json!(d.c.conn_streams_peak.load(Ordering::Relaxed))),
+            ("flow_window", pc.as_ref().map(|p| serde_json::json!(p.flow.lock().clone())).unwrap_or_default()),
             ("connection_streams_now", pc.map(|p| serde_json::json!(p.streams.current())).unwrap_or_default()),
             ("download_limiter_process", inner.download_limiter.stats_json()),
             // This job is still registered while its summary is written.
@@ -1420,6 +1486,7 @@ async fn fetch_chunk_inner(
                     h.arriving.fetch_add(k as u64, Ordering::Relaxed);
                     // One relaxed add per read keeps the interval byte rate live.
                     d.c.net_bytes.fetch_add(k as u64, Ordering::Relaxed);
+                    pc.rx_bytes.fetch_add(k as u64, Ordering::Relaxed);
                 }
                 None => {
                     *cat = Some(C::StreamClosedEarly);

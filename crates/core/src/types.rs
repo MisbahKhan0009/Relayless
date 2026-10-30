@@ -310,6 +310,11 @@ pub struct Settings {
     /// fallback, so existing installs get the new default exactly once.
     #[serde(default)]
     pub route_v2: bool,
+    /// Set once the default congestion control moved from BBRv3 to Cubic
+    /// (noq-proto's BBRv3 can sit at its minimum window for minutes), so
+    /// existing installs are moved exactly once.
+    #[serde(default)]
+    pub congestion_v2: bool,
     /// The user's own relay servers (empty = n0's public relays, which are
     /// rate-limited). Applies after restarting Relayless.
     pub relay_urls: String,
@@ -325,7 +330,7 @@ impl Default for Settings {
             download_limit_kbps: 0,
             upload_limit_kbps: 0,
             connection_mode: "allow_relay".into(),
-            congestion: "bbr".into(),
+            congestion: "cubic".into(),
             chunk_size_mib: 16,
             low_priority: true,
             notifications: true,
@@ -334,6 +339,7 @@ impl Default for Settings {
             history_retention: "365".into(),
             history_names: true,
             route_v2: true,
+            congestion_v2: true,
             relay_urls: String::new(),
         }
     }
@@ -347,8 +353,8 @@ impl Settings {
         if self.connection_mode != "direct_only" {
             self.connection_mode = "allow_relay".into();
         }
-        if self.congestion != "cubic" {
-            self.congestion = "bbr".into();
+        if self.congestion != "bbr" {
+            self.congestion = "cubic".into();
         }
         if !matches!(self.history_retention.as_str(), "forever" | "365" | "90" | "30" | "off") {
             self.history_retention = "365".into();
@@ -490,5 +496,18 @@ mod tests {
         let fresh = Settings::default();
         assert!(fresh.route_v2);
         assert_eq!(fresh.connection_mode, "allow_relay");
+    }
+
+    #[test]
+    fn congestion_defaults_to_cubic_and_old_installs_migrate() {
+        let fresh = Settings::default();
+        assert_eq!(fresh.congestion, "cubic");
+        assert!(fresh.congestion_v2);
+        let old: Settings = serde_json::from_str(r#"{"congestion":"bbr","deviceName":"PC"}"#).unwrap();
+        assert!(!old.congestion_v2, "settings saved before the change must migrate");
+        let odd = Settings { congestion: "reno".into(), ..Settings::default() }.sanitized();
+        assert_eq!(odd.congestion, "cubic", "unknown values fall back to the default");
+        let bbr = Settings { congestion: "bbr".into(), ..Settings::default() }.sanitized();
+        assert_eq!(bbr.congestion, "bbr", "an explicit choice after migration is kept");
     }
 }

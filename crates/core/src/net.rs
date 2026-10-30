@@ -30,16 +30,27 @@ pub const MAX_BIDI_STREAMS: u32 = 64;
 pub const KEEP_ALIVE: Duration = Duration::from_secs(5);
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(40);
 
+/// Connection receive window advertised in the handshake.
+pub fn initial_receive_window() -> u32 {
+    if crate::flow::enabled() {
+        crate::flow::INITIAL_WINDOW as u32
+    } else {
+        CONN_WINDOW
+    }
+}
+
 pub fn transport_config(congestion: &str) -> QuicTransportConfig {
     let mut cfg = QuicTransportConfig::builder()
         .stream_receive_window(VarInt::from_u32(STREAM_WINDOW))
-        .receive_window(VarInt::from_u32(CONN_WINDOW))
+        // With adaptive flow control the receiver starts small and grows the
+        // window per connection (flow.rs); the initial MAX_DATA can't be taken back.
+        .receive_window(VarInt::from_u32(initial_receive_window()))
         .send_window(SEND_WINDOW)
         .max_concurrent_bidi_streams(VarInt::from_u32(MAX_BIDI_STREAMS))
         .max_concurrent_uni_streams(VarInt::from_u32(0))
         .keep_alive_interval(KEEP_ALIVE)
         .max_idle_timeout(IdleTimeout::try_from(IDLE_TIMEOUT).ok());
-    cfg = if congestion == "cubic" {
+    cfg = if congestion != "bbr" {
         cfg.congestion_controller_factory(Arc::new(noq_proto::congestion::CubicConfig::default()))
     } else {
         cfg.congestion_controller_factory(Arc::new(noq_proto::congestion::Bbr3Config::default()))
@@ -77,6 +88,19 @@ pub async fn bind_main(secret: SecretKey, congestion: &str, relays: &str) -> Res
         b = b.relay_mode(RelayMode::Custom(RelayMap::from_iter(custom)));
     }
     Ok(b.bind().await?)
+}
+
+/// Test endpoint: minimal preset plus caller adjustments (see `CoreOptions::endpoint_hook`).
+pub async fn bind_custom(
+    secret: SecretKey,
+    congestion: &str,
+    hook: Box<dyn FnOnce(iroh::endpoint::Builder) -> iroh::endpoint::Builder + Send>,
+) -> Result<Endpoint> {
+    let b = Endpoint::builder(presets::Minimal)
+        .secret_key(secret)
+        .alpns(vec![ALPN.to_vec()])
+        .transport_config(transport_config(congestion));
+    Ok(hook(b).bind().await?)
 }
 
 /// Endpoint without relays or lookup, for local tests. Uses the same
@@ -133,10 +157,10 @@ pub fn route_of(conn: &Connection) -> RouteInfo {
 
 /// Name of the congestion controller `transport_config` installs for a setting.
 pub fn congestion_name(setting: &str) -> &'static str {
-    if setting == "cubic" {
-        "cubic"
-    } else {
+    if setting == "bbr" {
         "bbr3"
+    } else {
+        "cubic"
     }
 }
 
@@ -147,6 +171,8 @@ pub fn transport_json(active_congestion: &str) -> serde_json::Value {
         "source": "constants passed to QuicTransportConfig in net.rs",
         "stream_window_bytes": STREAM_WINDOW,
         "connection_window_bytes": CONN_WINDOW,
+        "connection_window_initial_bytes": initial_receive_window(),
+        "adaptive_flow_window": crate::flow::enabled(),
         "send_window_bytes": SEND_WINDOW,
         "max_concurrent_bidi_streams": MAX_BIDI_STREAMS,
         "keep_alive_ms": KEEP_ALIVE.as_millis() as u64,
@@ -298,7 +324,7 @@ mod tests {
     fn congestion_names() {
         assert_eq!(congestion_name("cubic"), "cubic");
         assert_eq!(congestion_name("bbr"), "bbr3");
-        assert_eq!(congestion_name("anything"), "bbr3");
+        assert_eq!(congestion_name("anything"), "cubic");
     }
 
     #[test]

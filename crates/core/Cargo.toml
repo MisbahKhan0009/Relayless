@@ -31,5 +31,7 @@ windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_F
 
 [dev-dependencies]
 tempfile = "3"
+# Local rate-limited relay server for the relay-path tests (tests/relay.rs).
+iroh-relay = { version = "1.4.1", features = ["server", "test-utils"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }
