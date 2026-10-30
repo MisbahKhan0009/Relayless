@@ -20,6 +20,7 @@ import { FolderPickerHost } from "./android";
 import { isActive, speed } from "./format";
 import { useStore, type Page } from "./store";
 import { Button, Modal, usePhone } from "./ui";
+import { useSlide } from "./slide";
 import Overview from "./pages/Overview";
 import Transfers from "./pages/Transfers";
 
@@ -57,6 +58,7 @@ const PHONE_TABS: Page[] = ["overview", "devices", "transfers"];
 /** Phone-only sheet for the destinations that don't fit the bottom bar. */
 function MoreSheet({ onClose }: { onClose: () => void }) {
   const s = useStore();
+  const slide = useSlide<HTMLDivElement>(".more-item", ".more-item.on");
   const go = (p: Page) => {
     s.setPage(p);
     onClose();
@@ -69,7 +71,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
   ];
   return (
     <Modal title="More" onClose={onClose}>
-      <div className="more-list">
+      <div className="more-list slides" ref={slide}>
         {items.map((i) => (
           <button key={i.id} className={`more-item ${s.page === i.id ? "on" : ""}`} onClick={() => go(i.id)}>
             <span className="more-ico">{i.icon}</span>
@@ -95,6 +97,7 @@ export default function App() {
   const s = useStore();
   const phone = usePhone();
   const [moreOpen, setMoreOpen] = useState(false);
+  const navSlide = useSlide<HTMLElement>(".nav-item", ".nav-item.active");
   const jobs = useMemo(() => Object.values(s.jobs), [s.jobs]);
   const activeCount = jobs.filter((j) => isActive(j.status)).length + s.outgoing.filter((o) => o.status === "sending" || o.status === "waiting").length;
   const attention = jobs.filter((j) => j.status === "needs_attention").length;
@@ -142,7 +145,7 @@ export default function App() {
           <span className="brand-mark"><Logo /></span>
           Relayless
         </div>
-        <nav className="nav" aria-label="Main">
+        <nav className="nav slides" aria-label="Main" ref={navSlide}>
           {shownNav.map((n) => (
             <button key={n.id} className={`nav-item nav-${n.id} ${isOn(n.id) ? "active" : ""}`} onClick={() => s.setPage(n.id)} aria-current={isOn(n.id) ? "page" : undefined}>
               {n.icon}

@@ -213,7 +213,7 @@ export function DayDot({ d, inB, outB, tiny, dir, i = 0 }: { d: number; inB: num
     <svg className="cal-dot" width={d} height={d} aria-hidden="true" style={style}>
       <path d={inPath} fill={SERIES.in} />
       <path d={outPath} fill={SERIES.out} />
-      <path d={`M${r},0L${r},${r}L${x},${y}`} fill="none" stroke="#202020" strokeWidth={1.5} strokeLinejoin="round" />
+      <path d={`M${r},0L${r},${r}L${x},${y}`} fill="none" stroke="#0B0B0D" strokeWidth={1.5} strokeLinejoin="miter" />
     </svg>
   );
 }

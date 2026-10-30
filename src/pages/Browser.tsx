@@ -24,6 +24,7 @@ import { bytes, dateTime } from "../format";
 import { useStore } from "../store";
 import { Button, Empty, IconButton, Modal, usePhone } from "../ui";
 import { isAndroid } from "../platform";
+import { useSlide } from "../slide";
 
 const ROW_DESK = 38;
 const ROW_PHONE = 66;
@@ -72,6 +73,7 @@ export default function Browser() {
   const [starting, setStarting] = useState(false);
   const body = useRef<HTMLDivElement>(null);
   const phone = usePhone();
+  const sortSlide = useSlide<HTMLDivElement>("button", "button.on");
   const ROW = phone ? ROW_PHONE : ROW_DESK;
   const reqId = useRef(0);
 
@@ -249,7 +251,7 @@ export default function Browser() {
                 <input type="checkbox" aria-label="Select all" checked={allSel} onChange={() => setSelected(allSel ? new Set() : new Set(shown.map((e) => e.name)))} />
                 <span className="small muted">{total} item{total === 1 ? "" : "s"}</span>
               </label>
-              <div className="segmented sm" role="radiogroup" aria-label="Sort">
+              <div className="segmented sm slides" role="radiogroup" aria-label="Sort" ref={sortSlide}>
                 {(["name", "size", "modified"] as SortKey[]).map((k) => (
                   <button key={k} type="button" role="radio" aria-checked={sort.key === k} className={sort.key === k ? "on" : ""} onClick={() => sortBy(k)}>
                     {k === "name" ? "Name" : k === "size" ? "Size" : "Date"} {sort.key === k ? arrow(k) : null}

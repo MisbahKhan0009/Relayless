@@ -8,6 +8,7 @@ import { Button, RouteBadge } from "../ui";
 import { JobRow, SendRow } from "./Transfers";
 import { useShareFolder } from "./Shares";
 import { DayDot } from "./History";
+import { FocusTransfer, useFocusJob } from "../focus";
 
 const DAY = 86_400_000;
 
@@ -84,10 +85,13 @@ export default function PhoneHome() {
   const active = list.filter((j) => isActive(j.status) || j.status === "needs_attention");
   const moving = flowActive || active.some((j) => j.status === "downloading") || uploads.some((u) => u.bps > 0);
   const last = history[0];
+  const focus = useFocusJob();
 
   return (
     <div className="page phome">
       <StorageAccessNotice />
+
+      {focus.job && <FocusTransfer job={focus.job} index={focus.index} count={focus.count} compact />}
 
       <div className="phome-actions">
         <button className="pact pact-send" onClick={shareFolder}>
