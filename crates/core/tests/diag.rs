@@ -350,16 +350,20 @@ async fn sender_summary_closes_after_idle() {
     p.sender.shutdown().await;
 }
 
-/// Reproduces a slow-transfer mechanism: with a low *sender* upload limit,
-/// each of the receiver's streams waits about streams x 1 MiB / limit for its
-/// next block. Above 90 s the receiver's stall timeout fires, the pass is
-/// cancelled and the connection dropped, then the job reconnects with backoff.
-/// Here: 12 streams at 100 KiB/s = ~123 s per block per stream.
-/// Takes ~2 minutes:
-///   cargo test -p relayless-core --release --test diag -- --ignored --nocapture repro_low_upload_limit_stalls
+/// Regression for a slow-transfer mechanism: with a low *sender* upload
+/// limit, each of the receiver's streams waits about streams x 1 MiB / limit
+/// for its next block (12 streams at 100 KiB/s = ~123 s). The receiver's
+/// stall timeout used to fire after 90 s without bytes on one stream, cancel
+/// the pass and drop the connection. Stall timeouts now count bytes from the
+/// sender on any connection (`receiver::wait_live`), so the transfer keeps going.
+/// Takes ~2.5 minutes:
+///   cargo test -p relayless-core --release --test diag -- --ignored --nocapture low_upload_limit_does_not_stall
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
-async fn repro_low_upload_limit_stalls() {
+async fn low_upload_limit_does_not_stall() {
+    if let Ok(f) = std::env::var("TLOG") {
+        let _ = tracing_subscriber::fmt().with_env_filter(f).try_init();
+    }
     let p = setup(&[("slow.bin", 96 * 1024 * 1024)], true).await;
     let mut s = p.receiver.settings();
     s.chunk_size_mib = 8;
@@ -375,21 +379,22 @@ async fn repro_low_upload_limit_stalls() {
         .unwrap()[0]
         .clone();
     let start = Instant::now();
-    let interrupted = loop {
+    while start.elapsed() < Duration::from_secs(150) {
         let j = p.receiver.list_jobs().unwrap().into_iter().find(|j| j.id == id).unwrap();
-        if j.status == JobStatus::Reconnecting {
-            break j;
-        }
-        assert!(start.elapsed() < Duration::from_secs(150), "no interruption: {:?} {:?}", j.status, j.error);
+        assert!(
+            j.status != JobStatus::Reconnecting,
+            "interrupted after {:.1}s: {:?}",
+            start.elapsed().as_secs_f64(),
+            j.error
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
-    };
-    println!("interrupted after {:.1}s: {:?}", start.elapsed().as_secs_f64(), interrupted.error);
+    }
     p.receiver.pause_job(&id).await.unwrap();
     let (_, rdir) = p.receiver.diagnostics();
     let r = wait_summary(&rdir, 10, |s| s["transfer_id"] == id.as_str()).await;
     println!("receiver errors: {}", r["errors"]);
     println!("receiver bytes: {} in {} ms", r["transfer"]["bytes_transferred"], r["transfer"]["elapsed_ms"]);
-    assert!(r["errors"]["stall_timeout"].as_u64().unwrap_or(0) >= 1, "expected a stall timeout: {}", r["errors"]);
+    assert_eq!(r["errors"]["stall_timeout"].as_u64().unwrap_or(0), 0, "stall timeout: {}", r["errors"]);
     p.receiver.shutdown().await;
     p.sender.shutdown().await;
     let (_, sdir) = p.sender.diagnostics();

@@ -162,6 +162,21 @@ export default function Settings() {
           >
             <input type="range" min={1} max={32} value={settings.parallelStreams} onChange={(e) => save({ parallelStreams: Number(e.target.value) })} aria-label="Parallel streams" />
           </Row>
+          <Row
+            label="Connections per sender"
+            hint="On long or lossy direct links, several connections carry more than one. Relayless adds them only while each one raises the speed, and never over a relay."
+          >
+            <Segmented
+              label="Connections per sender"
+              value={settings.maxConnections ?? 8}
+              onChange={(v) => save({ maxConnections: v })}
+              options={[
+                { value: 1, label: "1 (off)" },
+                { value: 4, label: "Up to 4" },
+                { value: 8, label: "Up to 8" },
+              ]}
+            />
+          </Row>
           <Row label="Files downloading at once">
             <Segmented label="Concurrent transfers" value={settings.maxConcurrentJobs} onChange={(v) => save({ maxConcurrentJobs: v })} options={[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))} />
           </Row>

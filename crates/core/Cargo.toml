@@ -33,5 +33,11 @@ windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_F
 tempfile = "3"
 # Local rate-limited relay server for the relay-path tests (tests/relay.rs).
 iroh-relay = { version = "1.4.1", features = ["server", "test-utils"] }
+# Emulated lossy path for the multi-connection tests (tests/multiconn.rs).
+iroh = { version = "1.4", features = ["unstable-custom-transports"] }
+noq-udp = "1.4"
+n0-watcher = "1"
+bytes = "1"
+iroh-base = "1.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }

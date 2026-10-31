@@ -287,6 +287,9 @@ pub struct Settings {
     pub parallel_streams: u32,
     /// Concurrent file transfers (1..=6)
     pub max_concurrent_jobs: u32,
+    /// Most connections per sender for multi-connection transfers (1 = off, up to 8).
+    /// The engine adds connections only while each one raises the speed.
+    pub max_connections: u32,
     /// 0 = unlimited. KiB/s.
     pub download_limit_kbps: u64,
     /// 0 = unlimited. KiB/s.
@@ -327,6 +330,7 @@ impl Default for Settings {
             download_dir: String::new(),
             parallel_streams: 12,
             max_concurrent_jobs: 2,
+            max_connections: 8,
             download_limit_kbps: 0,
             upload_limit_kbps: 0,
             connection_mode: "allow_relay".into(),
@@ -349,6 +353,7 @@ impl Settings {
     pub fn sanitized(mut self) -> Self {
         self.parallel_streams = self.parallel_streams.clamp(1, 32);
         self.max_concurrent_jobs = self.max_concurrent_jobs.clamp(1, 6);
+        self.max_connections = self.max_connections.clamp(1, 8);
         self.chunk_size_mib = self.chunk_size_mib.clamp(8, 32);
         if self.connection_mode != "direct_only" {
             self.connection_mode = "allow_relay".into();

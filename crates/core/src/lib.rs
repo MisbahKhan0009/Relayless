@@ -4,6 +4,7 @@ mod db;
 pub mod diag;
 pub mod flow;
 mod inner;
+pub mod mmc;
 pub mod invite;
 mod net;
 pub mod proto;

@@ -19,6 +19,7 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 - Glass interface with a new dark theme and green accent, bundled Figtree typeface, new app icon.
 - Phone layout: bottom-sheet dialogs, large two-line rows in the folder browser, tap to select, sort chips, a fixed download bar, and a save location you can pick without typing.
 - Project website, contribution guide, security policy and architecture notes.
+- **Multiple connections per sender** (MMCFTP-style): on long, lossy direct paths the receiver opens up to 8 QUIC connections to the same sender and keeps only as many as raise the speed. Settings → Connections per sender (1 = off). No change needed on the sender. Details: docs/MULTI_CONNECTION.md.
 
 ### Changed
 - The receiver now sends the sender a short receipt after a file is verified, so both keep a history entry. Older versions ignore it.
@@ -28,6 +29,7 @@ Notable changes to Relayless. Releases are published automatically from `main` a
 ### Fixed
 - **Transfers between different networks no longer sit at 0.** Relayless now tries a direct path first and, if routers block it (common on mobile data), continues through an end-to-end encrypted relay after about 15 seconds, switching back to direct when possible. Existing installs move to this mode once; Direct only is still in Settings.
 - Slow links no longer time out mid-block: a stream is only treated as stalled after 90 seconds with no data, and progress and speed now count bytes as they arrive.
+- Busy slow connections no longer drop about once a minute with "The sender stopped responding": a stream waiting behind its siblings now only times out if nothing at all arrives from the sender. This also fixes reconnects with low sender upload limits.
 - On phones, no page can be scrolled sideways any more (Overview, Transfers and Settings were wider than the screen on small phones).
 - Updated the `rand` dependency to 0.10.
 - Pausing early in a download no longer starts it over on resume.

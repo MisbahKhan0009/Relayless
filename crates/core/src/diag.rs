@@ -911,7 +911,7 @@ impl TransferDiag {
         }
         match rec.outcome {
             "completed" => self.c.chunks_completed.fetch_add(1, Ordering::Relaxed),
-            "stopped" => self.c.chunks_stopped.fetch_add(1, Ordering::Relaxed),
+            "stopped" | "moved" => self.c.chunks_stopped.fetch_add(1, Ordering::Relaxed),
             _ => self.c.chunks_failed.fetch_add(1, Ordering::Relaxed),
         };
         let mut s = self.st.lock();

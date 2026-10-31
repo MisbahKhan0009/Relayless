@@ -30,6 +30,7 @@ use tracing::{debug, info, warn};
 use crate::db::{HistoryRow, JobRow, JobStats};
 use crate::diag;
 use crate::inner::Inner;
+use crate::mmc;
 use crate::net::route_of;
 use crate::proto::*;
 use crate::types::{CoreEvent, JobSnapshot, JobStatus, PeerStatus, RouteInfo};
@@ -45,12 +46,43 @@ const READ_TIMEOUT: Duration = Duration::from_secs(60);
 /// this long. Slow links (a busy mobile uplink, a relay) can take minutes per
 /// 1 MiB block when it is shared by many streams; that is slow, not stuck.
 const STALL_TIMEOUT: Duration = Duration::from_secs(90);
+/// Upper bound for one wait on a chunk stream while the connection itself
+/// keeps delivering data (see `wait_live`).
+const LIVE_WAIT_CAP: Duration = Duration::from_secs(10 * 60);
 /// How long to wait for a direct path before using the encrypted relay
 /// (relay fallback mode). Was 15 s; in the cross-network field run hole
 /// punching never succeeded and the wait only delayed the start. QUIC
 /// multipath still moves the transfer to a direct path whenever one opens.
 const DIRECT_GRACE: Duration = Duration::from_secs(5);
 const COMMIT_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Waits for `fut`, failing only when the whole connection went quiet.
+///
+/// A stream can wait a long time while its connection is busy: QUIC charges
+/// connection-level flow control when the sender *buffers* data, and the
+/// stack wakes blocked writers in LIFO order, so when the receive window is
+/// the bottleneck (adaptive window, slow link) the oldest writer, often a
+/// fresh chunk's reply header, can be passed over for minutes. That is
+/// queueing, not a dead peer. So `fut` gets `idle` at a time; the wait is
+/// extended as long as `conn_rx` (chunk bytes received from this sender on
+/// any lane) moved during the last period, up to `LIVE_WAIT_CAP` in total.
+/// Returns `None` on timeout. `fut` is polled in place, so partial reads are
+/// never lost. A dead connection still fails fast via QUIC's idle timeout.
+async fn wait_live<F: std::future::Future>(fut: F, conn_rx: &AtomicU64, idle: Duration) -> Option<F::Output> {
+    tokio::pin!(fut);
+    let start = Instant::now();
+    loop {
+        let seen = conn_rx.load(Ordering::Relaxed);
+        tokio::select! {
+            r = &mut fut => return Some(r),
+            _ = tokio::time::sleep(idle) => {
+                if conn_rx.load(Ordering::Relaxed) == seen || start.elapsed() >= LIVE_WAIT_CAP {
+                    return None;
+                }
+            }
+        }
+    }
+}
 
 // ====================================================================== errors
 
@@ -134,14 +166,17 @@ pub struct PeerConn {
     pub streams: diag::Gauge,
     /// Chunk payload bytes read from this sender (all jobs), for flow control.
     pub rx_bytes: AtomicU64,
-    /// Latest state of the adaptive flow-control window.
+    /// Latest state of the adaptive flow-control window (primary connection).
     pub flow: Mutex<crate::flow::FlowSnapshot>,
+    /// Connections ("lanes") used for chunk streams; see `mmc.rs`.
+    pub pool: mmc::Pool,
 }
 
 impl PeerConn {
     fn new(id: EndpointId) -> Self {
         PeerConn {
             conn: tokio::sync::Mutex::new(None),
+            pool: mmc::Pool::default(),
             streams: diag::Gauge::new(),
             rx_bytes: AtomicU64::new(0),
             flow: Mutex::new(Default::default()),
@@ -185,19 +220,22 @@ pub fn peer_addr(inner: &Inner, peer: EndpointId) -> EndpointAddr {
     addr
 }
 
-/// Adjusts the connection's flow-control window for its lifetime (see `flow.rs`).
-async fn flow_loop(pc: Arc<PeerConn>, conn: Connection) {
+/// Adjusts one lane's flow-control window for its lifetime (see `flow.rs`).
+async fn flow_loop(pc: Arc<PeerConn>, lane: Arc<mmc::Lane>) {
     use crate::flow::{FlowController, FlowSnapshot, MAX_WINDOW, TICK};
+    let conn = lane.conn.clone();
     let vi = |w: u64| VarInt::from_u64(w).unwrap_or(VarInt::from_u32(crate::net::CONN_WINDOW));
     if !crate::flow::enabled() {
         conn.set_receive_window(vi(MAX_WINDOW));
-        *pc.flow.lock() = FlowSnapshot {
-            enabled: false,
-            window_bytes: MAX_WINDOW,
-            window_min_bytes: MAX_WINDOW,
-            window_max_bytes: MAX_WINDOW,
-            ..Default::default()
-        };
+        if lane.is_primary() {
+            *pc.flow.lock() = FlowSnapshot {
+                enabled: false,
+                window_bytes: MAX_WINDOW,
+                window_min_bytes: MAX_WINDOW,
+                window_max_bytes: MAX_WINDOW,
+                ..Default::default()
+            };
+        }
         return;
     }
     let mut fc = FlowController::new(Instant::now());
@@ -226,23 +264,101 @@ async fn flow_loop(pc: Arc<PeerConn>, conn: Connection) {
             }
             path = key;
         }
-        if let Some(w) = fc.tick(now, pc.rx_bytes.load(Ordering::Relaxed), srtt) {
+        if let Some(w) = fc.tick(now, lane.rx.load(Ordering::Relaxed), srtt) {
             conn.set_receive_window(vi(w));
             debug!(
                 target: "relayless_core::diag",
-                "flow_window window={} base_rtt_ms={:?} srtt_ms={:?} rate_max={:?}",
-                w, fc.snap.base_rtt_ms, fc.snap.srtt_ms, fc.snap.rate_max_bytes_per_sec
+                "flow_window lane={} window={} base_rtt_ms={:?} srtt_ms={:?} rate_max={:?}",
+                lane.id, w, fc.snap.base_rtt_ms, fc.snap.srtt_ms, fc.snap.rate_max_bytes_per_sec
             );
         }
-        *pc.flow.lock() = fc.snap.clone();
+        if lane.is_primary() {
+            *pc.flow.lock() = fc.snap.clone();
+        }
     }
+}
+
+/// Runs the multi-connection controller for a primary connection's lifetime.
+async fn mmc_loop(inner: Arc<Inner>, pc: Arc<PeerConn>, primary: Connection) {
+    let t = mmc::Timings::get();
+    let mut ctl = mmc::Controller::new(Instant::now(), t);
+    let peer = primary.remote_id();
+    let mut tick = tokio::time::interval(mmc::TICK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_decision: Option<String> = None;
+    loop {
+        tokio::select! {
+            _ = tick.tick() => {}
+            _ = primary.closed() => break,
+            _ = inner.shutdown.cancelled() => break,
+        }
+        // Extra lanes on a relay path get no new work (relays limit per device).
+        for lane in pc.pool.extra_lanes() {
+            lane.relayed.store(crate::net::route_kind(&lane.conn) == "relay", Ordering::Relaxed);
+        }
+        pc.pool.reap();
+        let max_lanes = inner.settings.read().max_connections.clamp(1, mmc::MAX_LANES);
+        let eligible = crate::net::route_kind(&primary) != "relay" && inner.download_limiter.rate() == 0;
+        let lanes = pc.pool.count();
+        let action = ctl.tick(mmc::Inputs {
+            now: Instant::now(),
+            // Bytes on lanes that take new work; retired lanes still draining
+            // their streams would inflate the "fewer lanes" measurement.
+            rx_total: pc.pool.active_rx(),
+            lanes,
+            max_lanes,
+            busy: pc.streams.current() >= 2,
+            eligible,
+        });
+        match action {
+            mmc::Action::None => {}
+            mmc::Action::Add => {
+                let addr = peer_addr(&inner, peer);
+                match tokio::time::timeout(Duration::from_secs(15), inner.endpoint.connect(addr, ALPN)).await {
+                    Ok(Ok(conn)) => {
+                        let lane = pc.pool.add(conn);
+                        tokio::spawn(flow_loop(pc.clone(), lane));
+                    }
+                    Ok(Err(e)) => {
+                        pc.pool.snap.lock().add_failures += 1;
+                        debug!(target: "relayless_core::diag", "mmc: extra connection failed: {e}");
+                    }
+                    Err(_) => {
+                        pc.pool.snap.lock().add_failures += 1;
+                        debug!(target: "relayless_core::diag", "mmc: extra connection timed out");
+                    }
+                }
+            }
+            mmc::Action::Remove => {
+                pc.pool.retire_one();
+            }
+            mmc::Action::Collapse => pc.pool.retire_all_extra(),
+        }
+        {
+            let mut s = pc.pool.snap.lock();
+            s.max_lanes = max_lanes;
+            s.lanes = pc.pool.count();
+            s.lanes_peak = s.lanes_peak.max(s.lanes);
+            s.goodput_by_lanes = ctl.history.clone();
+            s.last_decision = ctl.last_decision.clone();
+        }
+        if ctl.last_decision != last_decision {
+            last_decision = ctl.last_decision.clone();
+            if let Some(d) = &last_decision {
+                info!(target: "relayless_core::diag", "mmc_decision peer={} lanes_now={} {}", short_peer(&peer.to_string()), pc.pool.count(), d);
+            }
+        }
+    }
+    pc.pool.close_all_extra();
 }
 
 /// Installs a fresh connection: watches its route and marks the peer connected.
 fn install_conn(inner: &Arc<Inner>, pc: &Arc<PeerConn>, conn: &Connection) {
     pc.route.send_replace(route_of(conn));
     set_peer_state(inner, pc, "connected", None);
-    tokio::spawn(flow_loop(pc.clone(), conn.clone()));
+    let lane = pc.pool.set_primary(conn);
+    tokio::spawn(flow_loop(pc.clone(), lane));
+    tokio::spawn(mmc_loop(inner.clone(), pc.clone(), conn.clone()));
     let inner = inner.clone();
     let pc = pc.clone();
     let conn = conn.clone();
@@ -376,6 +492,7 @@ pub fn adopt_conn(inner: &Arc<Inner>, peer: EndpointId, conn: Connection) {
 pub async fn drop_conn(inner: &Arc<Inner>, peer: EndpointId) {
     let pc = peer_conn(inner, peer);
     let taken = pc.conn.lock().await.take();
+    pc.pool.close_all_extra();
     if let Some(c) = taken {
         c.close(VarInt::from_u32(0), b"reset");
     }
@@ -725,6 +842,7 @@ async fn sample_loop(inner: Arc<Inner>, h: Arc<JobHandle>) {
             extra["paths_open"] = serde_json::json!(report["paths"].as_array().map(|p| p.len()));
             let f = pc.flow.lock().clone();
             extra["flow_window_bytes"] = serde_json::json!(f.window_bytes);
+            extra["lanes"] = serde_json::json!(pc.pool.count());
             extra["flow_base_rtt_ms"] = serde_json::json!(f.base_rtt_ms);
             extra["route_api"] = serde_json::json!(diag::route_label(&actual.kind));
             extra["route_cache_matches"] = serde_json::json!(actual.kind == cached);
@@ -741,7 +859,7 @@ async fn sample_loop(inner: Arc<Inner>, h: Arc<JobHandle>) {
         let s = d.sample(&mut base, extra);
         info!(
             target: "relayless_core::diag",
-            "transfer_interval role=receiver id={} t_s={:.1} bytes={} interval_mib_s={} route={} streams={} conn_streams={} rtt_ms={} cwnd={} pacing_bytes_s={} lost_delta={} limiter_wait_ms={} read_wait_ms={}",
+            "transfer_interval role=receiver id={} t_s={:.1} bytes={} interval_mib_s={} route={} streams={} conn_streams={} lanes={} rtt_ms={} cwnd={} pacing_bytes_s={} lost_delta={} limiter_wait_ms={} read_wait_ms={}",
             d.id,
             s["t_ms"].as_f64().unwrap_or(0.0) / 1000.0,
             s["bytes"],
@@ -749,6 +867,7 @@ async fn sample_loop(inner: Arc<Inner>, h: Arc<JobHandle>) {
             s["route_api"].as_str().unwrap_or("unknown"),
             s["active_streams"],
             s["connection_streams"],
+            s["lanes"],
             s["rtt_ms"],
             s["cwnd_bytes"],
             s["pacing_rate_bytes_per_sec"],
@@ -795,6 +914,7 @@ fn finish_diag(inner: &Arc<Inner>, h: &Arc<JobHandle>, resumed_from: u64) {
         transfer_extra: vec![
             ("connection_streams_peak", serde_json::json!(d.c.conn_streams_peak.load(Ordering::Relaxed))),
             ("flow_window", pc.as_ref().map(|p| serde_json::json!(p.flow.lock().clone())).unwrap_or_default()),
+            ("multi_connection", pc.as_ref().map(|p| serde_json::json!(p.pool.snap.lock().clone())).unwrap_or_default()),
             ("connection_streams_now", pc.map(|p| serde_json::json!(p.streams.current())).unwrap_or_default()),
             ("download_limiter_process", inner.download_limiter.stats_json()),
             // This job is still registered while its summary is written.
@@ -1119,7 +1239,12 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
     let pc = peer_conn(inner, peer);
 
     let mut set = tokio::task::JoinSet::new();
-    for worker in 0..workers {
+    let base_workers = settings.parallel_streams.max(1);
+    // Workers still running (base + extra-lane workers).
+    let live_workers = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let spawn_worker = |set: &mut tokio::task::JoinSet<Result<(), JobError>>, worker: u32| {
+        live_workers.fetch_add(1, Ordering::Relaxed);
+        let live = live_workers.clone();
         let inner = inner.clone();
         let h = h.clone();
         let conn = conn.clone();
@@ -1132,15 +1257,42 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
         let partials = partials.clone();
         set.spawn(async move {
             let born = Instant::now();
+            let mut left_flag = false;
+            let left = &mut left_flag;
             let r = async {
             let mut corrupt_retries = 0u32;
             loop {
                 if cancel.is_cancelled() {
                     return Err(JobError::Stopped);
                 }
+                // Extra workers exist for extra lanes; one leaves per lane removed.
+                if worker >= base_workers {
+                    let target = mmc::target_workers(base_workers, pc.pool.count());
+                    if live.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| (v > target).then(|| v - 1)).is_ok() {
+                        *left = true;
+                        return Ok(());
+                    }
+                }
                 let Some(idx) = queue.lock().pop_front() else { return Ok(()) };
-                match fetch_chunk(&inner, &conn, &file, &row, idx, &cancel, &pc, &partials, &done_tx, &h, worker as u32).await {
+                // Least-loaded lane of the sender's pool (multi-connection).
+                let lane = pc.pool.pick();
+                let lane_conn = lane.as_ref().map(|l| l.conn.clone()).unwrap_or_else(|| conn.clone());
+                match fetch_chunk(&inner, &lane_conn, lane.as_ref(), &file, &row, idx, &cancel, &pc, &partials, &done_tx, &h, worker as u32).await {
                     Ok(()) => {}
+                    Err(ChunkError::Moved) => {
+                        // Lane set changed: resume this chunk on the worker's new lane.
+                        pc.pool.note_move();
+                        queue.lock().push_front(idx);
+                    }
+                    Err(ChunkError::Job(JobError::Network(_)))
+                        if lane.as_ref().is_some_and(|l| !l.is_primary()) && conn.close_reason().is_none() =>
+                    {
+                        // An extra connection failed: drop it and continue on the others.
+                        if let Some(l) = &lane {
+                            pc.pool.lane_failed(l);
+                        }
+                        queue.lock().push_front(idx);
+                    }
                     Err(ChunkError::Corrupt) if corrupt_retries < 5 => {
                         corrupt_retries += 1;
                         h.diag.c.chunk_retries.fetch_add(1, Ordering::Relaxed);
@@ -1152,6 +1304,7 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
                         let e = match e {
                             ChunkError::Corrupt => JobError::Fatal("Data kept failing verification.".into()),
                             ChunkError::Job(e) => e,
+                            ChunkError::Moved => unreachable!("handled above"),
                         };
                         if !matches!(e, JobError::Stopped) {
                             cancel.cancel();
@@ -1162,21 +1315,47 @@ async fn transfer_pass(inner: &Arc<Inner>, h: &Arc<JobHandle>, conn: &Connection
             }
             }
             .await;
+            // A worker that left for a removed lane already counted itself out.
+            if !left_flag {
+                live.fetch_sub(1, Ordering::Relaxed);
+            }
             h.diag.stages.worker_time.record(born.elapsed());
             r
         });
+    };
+    let mut spawned = 0u32;
+    while (spawned as usize) < workers {
+        spawn_worker(&mut set, spawned);
+        spawned += 1;
     }
-    drop(done_tx);
 
+    // Supervise: collect results, and add workers when lanes are added so a
+    // new lane carries traffic at once.
     let mut first_err: Option<JobError> = None;
-    while let Some(r) = set.join_next().await {
-        let r = r.unwrap_or_else(|e| Err(JobError::Fatal(format!("worker crashed: {e}"))));
-        if let Err(e) = r {
-            if first_err.as_ref().is_none_or(|f| e.severity() > f.severity()) {
-                first_err = Some(e);
+    let mut grow = tokio::time::interval(Duration::from_millis(500));
+    grow.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            r = set.join_next() => {
+                let Some(r) = r else { break };
+                let r = r.unwrap_or_else(|e| Err(JobError::Fatal(format!("worker crashed: {e}"))));
+                if let Err(e) = r {
+                    if first_err.as_ref().is_none_or(|f| e.severity() > f.severity()) {
+                        first_err = Some(e);
+                    }
+                }
+            }
+            _ = grow.tick(), if !pass_cancel.is_cancelled() => {
+                let target = mmc::target_workers(base_workers, pc.pool.count());
+                while spawned < target && !queue.lock().is_empty() {
+                    spawn_worker(&mut set, spawned);
+                    d.c.workers_started.fetch_add(1, Ordering::Relaxed);
+                    spawned += 1;
+                }
             }
         }
     }
+    drop(done_tx);
     // The committer saves everything received so far, including on pause.
     let commit_res = committer.await.unwrap_or_else(|e| Err(JobError::Fatal(e.to_string())));
     if let Err(e) = commit_res {
@@ -1202,6 +1381,9 @@ fn chunk_len(row: &JobRow, idx: u64) -> u64 {
 enum ChunkError {
     Corrupt,
     Job(JobError),
+    /// The worker's lane changed; the chunk resumes on the new lane from its
+    /// last verified block.
+    Moved,
 }
 
 impl From<JobError> for ChunkError {
@@ -1288,6 +1470,7 @@ fn receiver_config_json(inner: &Inner, s: &crate::types::Settings, row: &JobRow,
 async fn fetch_chunk(
     inner: &Arc<Inner>,
     conn: &Connection,
+    lane: Option<&Arc<mmc::Lane>>,
     file: &Arc<File>,
     row: &JobRow,
     idx: u64,
@@ -1307,12 +1490,13 @@ async fn fetch_chunk(
     if from > 0 {
         d.c.chunks_resumed.fetch_add(1, Ordering::Relaxed);
     }
-    let r = fetch_chunk_inner(inner, conn, file, row, idx, cancel, pc, partials, tx, h, &mut trace, &mut cat).await;
+    let r = fetch_chunk_inner(inner, conn, lane, file, row, idx, cancel, pc, partials, tx, h, worker, &mut trace, &mut cat).await;
     let (outcome, cat) = match &r {
         Ok(()) => ("completed", None),
         // Stopped by pause, shutdown or a sibling worker's failure: counted in
         // chunks_stopped, not as an error, so it can't mask the real cause.
         Err(ChunkError::Job(JobError::Stopped)) => ("stopped", None),
+        Err(ChunkError::Moved) => ("moved", None),
         Err(ChunkError::Corrupt) => ("failed", Some(diag::ErrCat::HashMismatch)),
         Err(ChunkError::Job(e)) => ("failed", Some(cat.unwrap_or_else(|| job_err_cat(e)))),
     };
@@ -1327,6 +1511,7 @@ async fn fetch_chunk(
 async fn fetch_chunk_inner(
     inner: &Arc<Inner>,
     conn: &Connection,
+    lane: Option<&Arc<mmc::Lane>>,
     file: &Arc<File>,
     row: &JobRow,
     idx: u64,
@@ -1335,6 +1520,7 @@ async fn fetch_chunk_inner(
     partials: &Mutex<HashMap<u64, (u64, Vec<[u8; 32]>)>>,
     tx: &mpsc::UnboundedSender<Progress>,
     h: &JobHandle,
+    _worker: u32,
     trace: &mut diag::ChunkTrace,
     cat: &mut Option<diag::ErrCat>,
 ) -> Result<(), ChunkError> {
@@ -1362,6 +1548,7 @@ async fn fetch_chunk_inner(
     // Active from stream open until this function returns.
     let _job_stream = d.streams.enter();
     let _peer_stream = pc.streams.enter();
+    let _lane_stream = lane.map(mmc::LaneStream::new);
     // Streams open to this sender (all jobs) when this one started.
     d.c.conn_streams_peak.fetch_max(pc.streams.current(), Ordering::Relaxed);
     let t = Instant::now();
@@ -1389,24 +1576,30 @@ async fn fetch_chunk_inner(
         });
         net(e)
     })?;
+    // Bytes received from this sender on any lane: the liveness signal for
+    // long waits. Per lane would be too strict: an extra lane may carry one
+    // or two streams, and with a sender upload limit each stream waits
+    // minutes for its next block. A dead connection is caught by QUIC's idle
+    // timeout instead.
+    let conn_rx: &AtomicU64 = &pc.rx_bytes;
     let t = Instant::now();
     let resp = tokio::select! {
-        r = tokio::time::timeout(READ_TIMEOUT, read_frame::<Response>(&mut recv)) => Some(r),
+        r = wait_live(read_frame::<Response>(&mut recv), conn_rx, READ_TIMEOUT) => Some(r),
         _ = cancel.cancelled() => None,
     };
     d.stages.header_wait.record(t.elapsed());
     trace.rec.header_wait_ms = Some(diag::ms(t.elapsed()));
     let resp: Response = match resp {
         None => return Err(JobError::Stopped.into()),
-        Some(Err(_)) => {
+        Some(None) => {
             *cat = Some(C::ResponseTimeout);
             return Err(JobError::Network("The sender stopped responding.".into()).into());
         }
-        Some(Ok(Err(e))) => {
+        Some(Some(Err(e))) => {
             *cat = Some(diag::classify_anyhow(&e));
             return Err(net(e).into());
         }
-        Some(Ok(Ok(r))) => r,
+        Some(Some(Ok(r))) => r,
     };
     match resp {
         Response::Chunk { len: l } if l == len - done => {}
@@ -1455,7 +1648,7 @@ async fn fetch_chunk_inner(
         while got < n {
             let t = Instant::now();
             let r = tokio::select! {
-                r = tokio::time::timeout(STALL_TIMEOUT, recv.read(&mut buf[got..n])) => r,
+                r = wait_live(recv.read(&mut buf[got..n]), conn_rx, STALL_TIMEOUT) => r,
                 _ = cancel.cancelled() => {
                     let _ = recv.stop(VarInt::from_u32(0));
                     return Err(JobError::Stopped.into());
@@ -1470,11 +1663,11 @@ async fn fetch_chunk_inner(
                 acc.flush();
             }
             let r = match r {
-                Err(_) => {
+                None => {
                     *cat = Some(C::StallTimeout);
                     return Err(JobError::Network("No data arrived for 90 seconds.".into()).into());
                 }
-                Ok(r) => r.map_err(|e| {
+                Some(r) => r.map_err(|e| {
                     *cat = Some(diag::classify_read(&e));
                     net(e)
                 })?,
@@ -1487,6 +1680,9 @@ async fn fetch_chunk_inner(
                     // One relaxed add per read keeps the interval byte rate live.
                     d.c.net_bytes.fetch_add(k as u64, Ordering::Relaxed);
                     pc.rx_bytes.fetch_add(k as u64, Ordering::Relaxed);
+                    if let Some(l) = lane {
+                        l.count_rx(k as u64);
+                    }
                 }
                 None => {
                     *cat = Some(C::StreamClosedEarly);
@@ -1496,16 +1692,16 @@ async fn fetch_chunk_inner(
         }
         let t = Instant::now();
         tokio::select! {
-            r = tokio::time::timeout(STALL_TIMEOUT, recv.read_exact(&mut want)) => {
+            r = wait_live(recv.read_exact(&mut want), conn_rx, STALL_TIMEOUT) => {
                 let rd = t.elapsed();
                 acc.wait += rd;
                 trace.read_wait(rd);
                 match r {
-                    Err(_) => {
+                    None => {
                         *cat = Some(C::StallTimeout);
                         return Err(JobError::Network("No data arrived for 90 seconds.".into()).into());
                     }
-                    Ok(r) => r.map_err(|e| {
+                    Some(r) => r.map_err(|e| {
                         *cat = Some(diag::classify_read_exact(&e));
                         net(e)
                     })?,
@@ -1580,6 +1776,15 @@ async fn fetch_chunk_inner(
             *cat = Some(C::RelayPathActive);
             let _ = recv.stop(VarInt::from_u32(0));
             return Err(JobError::RelayBlocked.into());
+        }
+        // Multi-connection: move the rest of the chunk to another lane
+        // (resuming from this block) if this lane was removed, moved to a
+        // relay, or carries 2+ more streams than the least-loaded lane.
+        if let Some(l) = lane {
+            if done < len && pc.pool.should_move(l) {
+                let _ = recv.stop(VarInt::from_u32(0));
+                return Err(ChunkError::Moved);
+            }
         }
     }
     partials.lock().remove(&idx);

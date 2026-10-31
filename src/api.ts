@@ -175,6 +175,8 @@ export interface Settings {
   downloadDir: string;
   parallelStreams: number;
   maxConcurrentJobs: number;
+  /** Most connections per sender (1 = off). */
+  maxConnections: number;
   downloadLimitKbps: number;
   uploadLimitKbps: number;
   connectionMode: "direct_only" | "allow_relay";
